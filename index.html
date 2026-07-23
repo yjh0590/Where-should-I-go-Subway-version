@@ -103,6 +103,8 @@
     padding:11px 8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
   .dir-btn.active{border-color:var(--amber);color:var(--text);background:rgba(255,176,32,.08);}
   .dir-note{font-size:11px;color:var(--text-dim);margin-top:8px;}
+  #infoStation{width:100%;background:var(--panel);border:1px solid var(--panel-edge);color:var(--text);
+    border-radius:12px;padding:11px 12px;font-size:13px;font-family:inherit;}
 
   .compass-card{text-align:center;padding:22px 16px 18px;}
   .compass-wrap{position:relative;width:250px;height:250px;margin:8px auto 14px;}
@@ -227,6 +229,17 @@
     <div class="dir-note" id="dirNote"></div>
   </div>
 
+  <!-- 공용: 역 정보 (첫차/막차·환승) -->
+  <div class="card">
+    <span class="label">역 정보 · 첫차/막차 · 환승</span>
+    <select id="infoStation" onchange="renderStationInfo()"></select>
+    <div class="dir-row" style="margin-top:8px;">
+      <button class="dir-btn active" id="dayWd" onclick="setInfoDay(false)">평일</button>
+      <button class="dir-btn" id="dayHol" onclick="setInfoDay(true)">휴일</button>
+    </div>
+    <div class="mode-status" id="stationInfoBox" style="margin-top:10px;line-height:1.8;"></div>
+  </div>
+
   <!-- 공용: 나침반 -->
   <div class="card compass-card">
     <div id="alignBadge" class="align-badge">방향 센서 대기 중</div>
@@ -261,37 +274,39 @@
 
 <script>
 /* ═══ 공용 데이터/유틸 ═══ */
+// sched: [상행 평일 첫차, 상행 평일 막차, 상행 휴일 첫차, 상행 휴일 막차, 하행 평일 첫차, 하행 평일 막차, 하행 휴일 첫차, 하행 휴일 막차]
+// 출처: 인천교통공사 1호선 첫차/막차 시각표(ictr.or.kr). 상행=계양 방면, 하행=송도달빛축제공원 방면.
 const STATIONS = [
-  {name:"계양", lat:37.5713, lng:126.7379, platform:"side"},
-  {name:"귤현", lat:37.5654, lng:126.7317, platform:"side"},
-  {name:"박촌", lat:37.5561, lng:126.7280, platform:"side"},
-  {name:"임학", lat:37.5461, lng:126.7274, platform:"side"},
-  {name:"계산", lat:37.5407, lng:126.7276, platform:"side"},
-  {name:"경인교대입구", lat:37.5344, lng:126.7274, platform:"side"},
-  {name:"작전", lat:37.5262, lng:126.7273, platform:"side"},
-  {name:"갈산", lat:37.5199, lng:126.7237, platform:"side"},
-  {name:"부평구청", lat:37.5079, lng:126.7233, platform:"side"},
-  {name:"부평시장", lat:37.4979, lng:126.7226, platform:"side"},
-  {name:"부평", lat:37.4897, lng:126.7247, platform:"island"},
-  {name:"동수", lat:37.4838, lng:126.7220, platform:"side"},
-  {name:"부평삼거리", lat:37.4790, lng:126.7196, platform:"side"},
-  {name:"간석오거리", lat:37.4735, lng:126.7136, platform:"side"},
-  {name:"인천시청", lat:37.4562, lng:126.7052, platform:"island"},
-  {name:"예술회관", lat:37.4489, lng:126.6980, platform:"side"},
-  {name:"인천터미널", lat:37.4405, lng:126.6913, platform:"side"},
-  {name:"문학경기장", lat:37.4358, lng:126.6825, platform:"side"},
-  {name:"선학", lat:37.4275, lng:126.6787, platform:"side"},
-  {name:"신연수", lat:37.4141, lng:126.6763, platform:"side"},
-  {name:"원인재", lat:37.4038, lng:126.6790, platform:"side"},
-  {name:"동춘", lat:37.3948, lng:126.6757, platform:"side"},
-  {name:"동막", lat:37.3878, lng:126.6697, platform:"side"},
-  {name:"캠퍼스타운", lat:37.3838, lng:126.6620, platform:"side"},
-  {name:"테크노파크", lat:37.3862, lng:126.6512, platform:"side"},
-  {name:"지식정보단지", lat:37.3878, lng:126.6390, platform:"side"},
-  {name:"인천대입구", lat:37.3844, lng:126.6289, platform:"side"},
-  {name:"센트럴파크", lat:37.3931, lng:126.6335, platform:"side"},
-  {name:"국제업무지구", lat:37.3968, lng:126.6412, platform:"side"},
-  {name:"송도달빛축제공원", lat:37.3898, lng:126.6486, platform:"island"}
+  {name:"계양", lat:37.5713, lng:126.7379, platform:"side", sched:["05:42","00:52","05:42","00:52","05:39","00:39","05:39","00:39"]},
+  {name:"귤현", lat:37.5654, lng:126.7317, platform:"side", sched:["05:40","00:50","05:40","00:50","05:41","00:41","05:41","00:41"]},
+  {name:"박촌", lat:37.5561, lng:126.7280, platform:"side", sched:["05:37","00:47","05:37","00:47","05:30","00:44","05:33","00:44"]},
+  {name:"임학", lat:37.5461, lng:126.7274, platform:"side", sched:["05:35","00:45","05:35","00:45","05:32","00:46","05:35","00:46"]},
+  {name:"계산", lat:37.5407, lng:126.7276, platform:"side", sched:["05:33","00:43","05:33","00:43","05:34","00:48","05:37","00:48"]},
+  {name:"경인교대입구", lat:37.5344, lng:126.7274, platform:"side", sched:["05:31","00:41","05:31","00:41","05:36","00:50","05:39","00:50"]},
+  {name:"작전", lat:37.5262, lng:126.7273, platform:"side", sched:["05:30","00:40","05:30","00:40","05:30","00:51","05:30","00:51"]},
+  {name:"갈산", lat:37.5199, lng:126.7237, platform:"side", sched:["05:46","00:38","05:46","00:38","05:32","00:45","05:32","00:45"]},
+  {name:"부평구청", lat:37.5079, lng:126.7233, platform:"side", sched:["05:44","00:36","05:44","00:36","05:34","00:47","05:34","00:47"]},
+  {name:"부평시장", lat:37.4979, lng:126.7226, platform:"side", sched:["05:42","00:34","05:42","00:34","05:36","00:49","05:36","00:49"]},
+  {name:"부평", lat:37.4897, lng:126.7247, platform:"island", transfer:"경인선 1호선", sched:["05:41","00:32","05:41","00:32","05:37","00:50","05:37","00:50"]},
+  {name:"동수", lat:37.4838, lng:126.7220, platform:"side", sched:["05:39","00:30","05:39","00:30","05:39","00:52","05:39","00:52"]},
+  {name:"부평삼거리", lat:37.4790, lng:126.7196, platform:"side", sched:["05:37","00:28","05:37","00:28","05:41","00:54","05:41","00:54"]},
+  {name:"간석오거리", lat:37.4735, lng:126.7136, platform:"side", sched:["05:35","00:26","05:35","00:26","05:43","00:56","05:43","00:56"]},
+  {name:"인천시청", lat:37.4562, lng:126.7052, platform:"island", transfer:"수인분당선", sched:["05:32","00:23","05:32","00:23","05:46","00:59","05:46","00:59"]},
+  {name:"예술회관", lat:37.4489, lng:126.6980, platform:"side", sched:["05:30","00:21","05:30","00:21","05:32","01:01","05:32","01:01"]},
+  {name:"인천터미널", lat:37.4405, lng:126.6913, platform:"side", sched:["05:40","00:20","05:40","00:20","05:33","00:51","05:33","00:51"]},
+  {name:"문학경기장", lat:37.4358, lng:126.6825, platform:"side", sched:["05:39","00:18","05:39","00:18","05:35","00:52","05:35","00:52"]},
+  {name:"선학", lat:37.4275, lng:126.6787, platform:"side", sched:["05:37","00:17","05:37","00:17","05:36","00:54","05:36","00:54"]},
+  {name:"신연수", lat:37.4141, lng:126.6763, platform:"side", sched:["05:35","00:28","05:35","00:28","05:38","00:56","05:38","00:56"]},
+  {name:"원인재", lat:37.4038, lng:126.6790, platform:"side", transfer:"수인분당선", sched:["05:34","00:27","05:34","00:27","05:40","00:57","05:40","00:57"]},
+  {name:"동춘", lat:37.3948, lng:126.6757, platform:"side", sched:["05:32","00:25","05:32","00:25","05:42","00:59","05:42","00:59"]},
+  {name:"동막", lat:37.3878, lng:126.6697, platform:"side", sched:["05:30","00:23","05:30","00:22","05:44","01:01","05:44","01:01"]},
+  {name:"캠퍼스타운", lat:37.3838, lng:126.6620, platform:"side", sched:["05:41","00:21","05:41","00:20","05:46","00:52","05:46","00:52"]},
+  {name:"테크노파크", lat:37.3862, lng:126.6512, platform:"side", sched:["05:39","00:19","05:39","00:18","05:48","00:54","05:48","00:54"]},
+  {name:"지식정보단지", lat:37.3878, lng:126.6390, platform:"side", sched:["05:37","00:17","05:37","00:16","05:50","00:56","05:50","00:56"]},
+  {name:"인천대입구", lat:37.3844, lng:126.6289, platform:"side", sched:["05:35","00:15","05:35","00:14","05:52","00:58","05:52","00:58"]},
+  {name:"센트럴파크", lat:37.3931, lng:126.6335, platform:"side", sched:["05:34","00:14","05:34","00:13","05:53","00:59","05:53","00:59"]},
+  {name:"국제업무지구", lat:37.3968, lng:126.6412, platform:"side", sched:["05:32","00:12","05:32","00:11","05:55","01:01","05:55","01:01"]},
+  {name:"송도달빛축제공원", lat:37.3898, lng:126.6486, platform:"island", sched:["05:30","00:10","05:30","00:09","05:57","-","05:57","-"]}
 ];
 const $ = id => document.getElementById(id);
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
@@ -743,8 +758,33 @@ function updateArrow(heading){
   const mv=$("manualVal"); if (mv) mv.textContent=Math.round(heading)+"°";
 }
 
+/* ═══ 공용: 역 정보 (첫차/막차·환승) ═══ */
+let infoHoliday=false;
+function initStationInfo(){
+  $("infoStation").innerHTML = STATIONS.map((s,i)=>'<option value="'+i+'">'+s.name+'</option>').join("");
+  $("infoStation").value=curIdx;
+  renderStationInfo();
+}
+function setInfoDay(hol){
+  infoHoliday=hol;
+  $("dayWd").classList.toggle("active",!hol);
+  $("dayHol").classList.toggle("active",hol);
+  renderStationInfo();
+}
+function renderStationInfo(){
+  const s=STATIONS[+$("infoStation").value];
+  const [fuWd,luWd,fuHol,luHol,fdWd,ldWd,fdHol,ldHol]=s.sched;
+  const [fu,lu]=infoHoliday?[fuHol,luHol]:[fuWd,luWd];
+  const [fd,ld]=infoHoliday?[fdHol,ldHol]:[fdWd,ldWd];
+  $("stationInfoBox").innerHTML =
+    "계양 방면(상행) 첫차 "+fu+" · 막차 "+lu+"<br>"+
+    "송도 방면(하행) 첫차 "+fd+" · 막차 "+ld+"<br>"+
+    (s.transfer ? "🔁 환승: "+s.transfer : "환승역 아님");
+}
+
 renderRoute();
 computeDoor();
+initStationInfo();
 </script>
 
 <div id="installTip" style="display:none;position:fixed;left:16px;right:16px;bottom:16px;z-index:100;
