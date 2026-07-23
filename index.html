@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>내리는 문 — 지하철 하차 방향 안내</title>
+<meta name="description" content="GPS와 나침반으로 지하철에서 내리는 문 방향을 화살표로 알려주는 웹앱">
+<meta name="theme-color" content="#060a12">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="내리는 문">
+<style>
+  :root {
+    --bg:#060a12; --panel:#10182a; --panel-edge:#232f4c;
+    --amber:#ffb020; --green:#3df07c; --red:#ff5d5d; --blue:#5aa2ff; --purple:#b48cff;
+    --text:#eef2f8; --text-dim:#8b96ab; --radius:18px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:radial-gradient(circle at 50% -10%,#0d1424 0%,#060a12 55%);color:var(--text);
+    font-family:'Apple SD Gothic Neo','Pretendard','Noto Sans KR','Malgun Gothic',sans-serif;
+    min-height:100vh;display:flex;justify-content:center;padding:20px 16px 48px;}
+  .app{width:100%;max-width:430px;}
+  header{margin-bottom:14px;}
+  .eyebrow{font-size:12px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;}
+  h1{font-size:26px;font-weight:800;letter-spacing:-0.02em;}
+  h1 .dot{color:var(--amber);}
+  p.desc{font-size:13px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
+
+  .tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;position:sticky;top:8px;z-index:50;}
+  .tab{background:var(--panel);border:1px solid var(--panel-edge);color:var(--text-dim);border-radius:12px;
+    padding:10px 4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;transition:all .15s;}
+  .tab small{display:block;font-size:10px;font-weight:500;margin-top:2px;opacity:.8;}
+  .tab.active{border-color:var(--amber);color:var(--text);background:rgba(255,176,32,.1);}
+  .mode-pane{display:none;}
+  .mode-pane.active{display:block;}
+
+  .card{background:var(--panel);border:1px solid var(--panel-edge);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+  .label{font-size:12px;color:var(--text-dim);letter-spacing:.08em;margin-bottom:10px;display:block;}
+  .desc-note{font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:12px;background:rgba(255,255,255,.02);
+    border:1px dashed var(--panel-edge);border-radius:12px;padding:10px 12px;}
+  .desc-note b{color:#c9d4e8;}
+
+  .status-banner{border-radius:var(--radius);border:1px solid var(--panel-edge);background:#0a101f;
+    padding:16px;margin-bottom:14px;display:flex;align-items:center;gap:14px;}
+  .status-icon{font-size:30px;width:44px;text-align:center;flex-shrink:0;}
+  .status-main{flex:1;min-width:0;}
+  .status-title{font-size:16px;font-weight:800;}
+  .status-title .hl{color:var(--amber);}
+  .status-detail{font-size:12px;color:var(--text-dim);margin-top:3px;line-height:1.5;}
+  .speed-chip{flex-shrink:0;text-align:right;}
+  .speed-chip .num{font-size:20px;font-weight:800;color:var(--blue);}
+  .speed-chip .unit{font-size:11px;color:var(--text-dim);}
+  .status-banner.moving{border-color:var(--blue);background:rgba(90,162,255,.06);}
+  .status-banner.stopped{border-color:var(--amber);background:rgba(255,176,32,.05);}
+  .status-banner.estimating{border-color:var(--purple);background:rgba(180,140,255,.06);}
+  @keyframes pulse-dot{0%,100%{opacity:.4;}50%{opacity:1;}}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);
+    margin-right:6px;animation:pulse-dot 1.4s infinite;vertical-align:1px;}
+  .live-dot.purple{background:var(--purple);}
+
+  .source-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    border:1px solid var(--panel-edge);border-radius:999px;padding:3px 10px;color:var(--text-dim);margin-top:6px;}
+  .source-chip.gps{border-color:var(--green);color:var(--green);}
+  .source-chip.net{border-color:var(--blue);color:var(--blue);}
+  .source-chip.api{border-color:var(--amber);color:var(--amber);}
+  .source-chip.est{border-color:var(--purple);color:var(--purple);}
+
+  .route-strip{display:flex;align-items:center;margin-top:12px;overflow:hidden;}
+  .rs-node{display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;}
+  .rs-dot{width:12px;height:12px;border-radius:50%;background:#25304e;border:2px solid #35446c;}
+  .rs-node.here .rs-dot{background:var(--amber);border-color:var(--amber);box-shadow:0 0 10px rgba(255,176,32,.6);}
+  .rs-node.next .rs-dot{background:transparent;border-color:var(--green);}
+  .rs-name{font-size:11px;margin-top:5px;color:var(--text-dim);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;max-width:100%;}
+  .rs-node.here .rs-name{color:var(--amber);font-weight:700;}
+  .rs-node.next .rs-name{color:var(--green);}
+  .rs-line{height:2px;background:#25304e;flex:1;margin-bottom:16px;position:relative;overflow:hidden;}
+  .rs-line.active::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,var(--blue),transparent);animation:flow 1.2s linear infinite;}
+  .rs-line.est::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,var(--purple),transparent);animation:flow 1.2s linear infinite;}
+  @keyframes flow{from{transform:translateX(-100%);}to{transform:translateX(100%);}}
+
+  .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .go-btn{background:rgba(61,240,124,.08);border:1px solid var(--green);color:var(--green);
+    border-radius:12px;padding:13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .go-btn.stop{background:rgba(255,93,93,.08);border-color:var(--red);color:var(--red);}
+  .alt-btn{background:transparent;border:1px solid var(--panel-edge);color:var(--text-dim);
+    border-radius:12px;padding:13px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .alt-btn.warn{border-color:var(--purple);color:var(--purple);background:rgba(180,140,255,.06);}
+  .go-btn:active,.alt-btn:active{transform:scale(.98);}
+  .mode-status{font-size:12px;color:var(--text-dim);margin-top:10px;min-height:16px;line-height:1.6;}
+  .api-log{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11px;color:#9fb4d8;
+    background:#070c16;border:1px solid #1a2338;border-radius:10px;padding:10px 12px;margin-top:10px;
+    line-height:1.7;max-height:96px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;}
+
+  .dir-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .dir-btn{background:transparent;border:1px solid var(--panel-edge);color:var(--text-dim);border-radius:12px;
+    padding:11px 8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .dir-btn.active{border-color:var(--amber);color:var(--text);background:rgba(255,176,32,.08);}
+  .dir-note{font-size:11px;color:var(--text-dim);margin-top:8px;}
+
+  .compass-card{text-align:center;padding:22px 16px 18px;}
+  .compass-wrap{position:relative;width:250px;height:250px;margin:8px auto 14px;}
+  .door-bg{position:absolute;inset:20px;border-radius:16px;overflow:hidden;z-index:0;background:#080c16;
+    box-shadow:inset 0 0 0 1px #1c2745;}
+  .door-panel{position:absolute;top:0;bottom:0;width:50%;
+    background:linear-gradient(160deg,#1c2740 0%,#121a2e 55%,#0c1220 100%);transition:transform .5s cubic-bezier(.2,.8,.2,1);}
+  .door-panel.left{left:0;border-right:1px solid #2a3757;}
+  .door-panel.right{right:0;border-left:1px solid #2a3757;}
+  .door-panel .window{position:absolute;top:16%;height:34%;left:18%;right:18%;
+    background:linear-gradient(180deg,#26365c,#0a0f1c);border-radius:8px;border:1px solid #33436e;}
+  .door-panel .stripe{position:absolute;bottom:16%;left:14%;right:14%;height:3px;background:#2a3757;border-radius:2px;}
+  .door-seam{position:absolute;top:0;bottom:0;left:50%;width:2px;transform:translateX(-1px);
+    background:var(--red);opacity:.3;transition:all .3s;}
+  .door-bg.open .door-panel.left{transform:translateX(-22px);}
+  .door-bg.open .door-panel.right{transform:translateX(22px);}
+  .door-bg.open .door-seam{background:var(--green);opacity:1;box-shadow:0 0 22px 6px rgba(61,240,124,.55);}
+  .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--panel-edge);z-index:1;pointer-events:none;}
+  .needle-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    transition:transform .12s linear;z-index:2;}
+  .arrow-svg{width:112px;height:112px;filter:drop-shadow(0 0 8px rgba(61,240,124,.5));transition:filter .2s;}
+  .arrow-svg.misaligned{filter:drop-shadow(0 0 8px rgba(255,93,93,.45));}
+  .arrow-fill{fill:var(--green);transition:fill .2s;}
+  .arrow-svg.misaligned .arrow-fill{fill:var(--red);}
+  .compass-placeholder{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;
+    height:100%;color:var(--text-dim);font-size:14px;padding:0 30px;line-height:1.6;}
+  .align-badge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+    padding:6px 14px;border-radius:999px;border:1px solid var(--panel-edge);color:var(--text-dim);
+    margin-bottom:10px;transition:all .2s;}
+  .align-badge.on{color:var(--green);border-color:var(--green);background:rgba(61,240,124,.08);}
+  .align-badge.off{color:var(--red);border-color:var(--red);background:rgba(255,93,93,.08);}
+  .verdict{font-size:19px;font-weight:800;}
+  .verdict .side{color:var(--green);}
+  .sub{font-size:13px;color:var(--text-dim);margin-top:6px;}
+  .start-btn{width:100%;background:var(--amber);color:#1a1200;border:none;border-radius:12px;
+    padding:13px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:6px;}
+  .manual-row{margin-top:14px;}
+  .manual-row input[type=range]{width:100%;accent-color:var(--amber);}
+  .manual-label{font-size:12px;color:var(--text-dim);display:flex;justify-content:space-between;margin-top:4px;}
+  footer{font-size:12px;color:var(--text-dim);line-height:1.6;padding:4px 6px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="eyebrow">AUTO TRACKING · 3 POSITIONING MODES</div>
+    <h1>내리는 문<span class="dot">.</span></h1>
+    <p class="desc">자동 추적이 기본이에요. 지하에서 GPS가 끊기는 문제를 푸는 세 가지 측위 방식을 탭으로 골라 테스트해보세요.</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tab1" onclick="switchMode(1)">Ver 1<small>셀룰러/Wi-Fi</small></button>
+    <button class="tab" id="tab2" onclick="switchMode(2)">Ver 2<small>열차 API</small></button>
+    <button class="tab" id="tab3" onclick="switchMode(3)">Ver 3<small>타이머 추정</small></button>
+  </div>
+
+  <!-- 공용 상태 배너 -->
+  <div class="status-banner" id="statusBanner">
+    <div class="status-icon" id="statusIcon">🚉</div>
+    <div class="status-main">
+      <div class="status-title" id="statusTitle">추적 대기 중</div>
+      <div class="status-detail" id="statusDetail">아래에서 추적을 시작해보세요</div>
+      <div class="source-chip" id="sourceChip">측위 대기</div>
+    </div>
+    <div class="speed-chip"><div class="num" id="speedNum">–</div><div class="unit">km/h</div></div>
+  </div>
+
+  <!-- Ver1: 셀룰러/Wi-Fi -->
+  <div class="mode-pane active" id="pane1">
+    <div class="desc-note"><b>Ver 1 · 셀룰러/Wi-Fi 측위</b><br>
+      GPS 위성 대신 기지국·Wi-Fi 신호로 위치를 잡아요. 지하에서도 대략적인 위치가 나오지만 오차가 수백 m까지 커질 수 있어서, 역 판정 반경을 넓게(600m) 잡고 "연속 확인" 횟수를 늘려 오탐을 막는 전략이에요. 브라우저에서는 저정밀 모드 요청으로 네트워크 측위를 유도합니다.</div>
+    <div class="card">
+      <div class="btn-row">
+        <button class="go-btn" id="m1_realBtn" onclick="m1_toggleReal()">▶ 실제 네트워크 측위</button>
+        <button class="alt-btn" id="m1_simBtn" onclick="m1_toggleSim()">🎬 시뮬레이션 (오차 포함)</button>
+      </div>
+      <div class="mode-status" id="m1_status"></div>
+      <div class="route-strip" id="routeStrip1"></div>
+    </div>
+  </div>
+
+  <!-- Ver2: 열차 API -->
+  <div class="mode-pane" id="pane2">
+    <div class="desc-note"><b>Ver 2 · 열차 실시간 운행 API</b><br>
+      내 폰의 위치가 아니라, "지금 이 노선의 열차들이 어느 역에 있는지"를 알려주는 공개 API를 폴링해요. 지하 여부와 무관하게 정확하다는 게 최대 장점. 여기서는 실제 API 대신 <b>모의 API 서버</b>를 붙여서 응답 형식과 흐름을 그대로 재현했어요. (실제 연동 시: 서울 열린데이터광장 실시간 위치정보, 인천교통공사 API — 키 발급 필요)</div>
+    <div class="card">
+      <div class="btn-row">
+        <button class="go-btn" id="m2_pollBtn" onclick="m2_togglePoll()">▶ 모의 API 폴링 시작</button>
+        <button class="alt-btn" onclick="m2_clearLog()">로그 지우기</button>
+      </div>
+      <div class="mode-status" id="m2_status">폴링 주기: 2초 · 내가 탄 열차를 자동 매칭한다고 가정</div>
+      <div class="api-log" id="m2_log">API 응답 로그가 여기에 표시돼요</div>
+      <div class="route-strip" id="routeStrip2"></div>
+    </div>
+  </div>
+
+  <!-- Ver3: 타이머 추정 -->
+  <div class="mode-pane" id="pane3">
+    <div class="desc-note"><b>Ver 3 · 타이머 추정 (Dead Reckoning)</b><br>
+      GPS가 잘 잡히는 동안은 그대로 쓰다가, 신호가 <b>6초 이상 끊기면</b> "마지막으로 확인된 위치 + 역간 평균 소요시간"으로 진행 상황을 추정해요. 도착 예상 시간이 지나면 도착으로 간주하고, 신호가 돌아오면 실측으로 즉시 보정합니다. 시뮬레이션에서 📡 버튼으로 터널 진입(신호 끊김)을 재현해보세요.</div>
+    <div class="card">
+      <div class="btn-row">
+        <button class="go-btn" id="m3_realBtn" onclick="m3_toggleReal()">▶ 실제 GPS 추적</button>
+        <button class="alt-btn" id="m3_simBtn" onclick="m3_toggleSim()">🎬 시뮬레이션 체험</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="alt-btn warn" id="m3_signalBtn" onclick="m3_toggleSignal()" disabled>📡 신호 끊김 재현</button>
+        <div style="display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-dim);" id="m3_eta"></div>
+      </div>
+      <div class="mode-status" id="m3_status"></div>
+      <div class="route-strip" id="routeStrip3"></div>
+    </div>
+  </div>
+
+  <!-- 공용: 방면 -->
+  <div class="card">
+    <span class="label">가는 방면 (이동이 감지되면 자동 판별돼요)</span>
+    <div class="dir-row">
+      <button class="dir-btn active" id="dirDown" onclick="setDir('down', true)">송도 방면 ↓</button>
+      <button class="dir-btn" id="dirUp" onclick="setDir('up', true)">계양 방면 ↑</button>
+    </div>
+    <div class="dir-note" id="dirNote"></div>
+  </div>
+
+  <!-- 공용: 나침반 -->
+  <div class="card compass-card">
+    <div id="alignBadge" class="align-badge">방향 센서 대기 중</div>
+    <div class="compass-wrap">
+      <div class="door-bg" id="doorBg">
+        <div class="door-panel left"><div class="window"></div><div class="stripe"></div></div>
+        <div class="door-panel right"><div class="window"></div><div class="stripe"></div></div>
+        <div class="door-seam"></div>
+      </div>
+      <div class="ring"></div>
+      <div id="needleWrap" class="needle-wrap" style="display:none;">
+        <svg class="arrow-svg" id="arrowSvg" viewBox="0 0 100 100">
+          <path class="arrow-fill" d="M50 6 L76 44 L60 44 L60 92 L40 92 L40 44 L24 44 Z"/>
+        </svg>
+      </div>
+      <div class="compass-placeholder" id="placeholder">나침반을 켜면 화살표가 나타나요</div>
+    </div>
+    <div class="verdict">내리실 문은 <span class="side" id="sideText">–</span> 방향</div>
+    <div class="sub" id="subNote"></div>
+    <button class="start-btn" id="startBtn" onclick="startCompass()">🧭 나침반 켜기</button>
+    <div class="manual-row" id="manualRow" style="display:none;">
+      <span class="label">센서 없는 환경용 방향 시뮬레이션</span>
+      <input type="range" min="0" max="359" value="0" oninput="onHeading(+this.value)">
+      <div class="manual-label"><span>내가 보는 방향 (0=북쪽)</span><span id="manualVal">0°</span></div>
+    </div>
+  </div>
+
+  <footer>
+    ※ 데모용 예시 데이터(인천 1호선 근사 좌표·승강장 유형)입니다. Ver2의 실제 API 연동은 API 키와 서버(CORS 우회)가 필요해서 모의 서버로 대체했어요. 실전에서는 세 방식을 하나로 합쳐 "API 우선 → 네트워크 측위 보조 → 끊기면 타이머 추정" 순의 하이브리드가 이상적입니다.
+  </footer>
+</div>
+
+<script>
+/* ═══ 공용 데이터/유틸 ═══ */
+const STATIONS = [
+  {name:"계양", lat:37.5713, lng:126.7379, platform:"side"},
+  {name:"귤현", lat:37.5654, lng:126.7317, platform:"side"},
+  {name:"박촌", lat:37.5561, lng:126.7280, platform:"side"},
+  {name:"임학", lat:37.5461, lng:126.7274, platform:"side"},
+  {name:"계산", lat:37.5407, lng:126.7276, platform:"side"},
+  {name:"경인교대입구", lat:37.5344, lng:126.7274, platform:"side"},
+  {name:"작전", lat:37.5262, lng:126.7273, platform:"side"},
+  {name:"갈산", lat:37.5199, lng:126.7237, platform:"side"},
+  {name:"부평구청", lat:37.5079, lng:126.7233, platform:"side"},
+  {name:"부평시장", lat:37.4979, lng:126.7226, platform:"side"},
+  {name:"부평", lat:37.4897, lng:126.7247, platform:"island"},
+  {name:"동수", lat:37.4838, lng:126.7220, platform:"side"},
+  {name:"부평삼거리", lat:37.4790, lng:126.7196, platform:"side"},
+  {name:"간석오거리", lat:37.4735, lng:126.7136, platform:"side"},
+  {name:"인천시청", lat:37.4562, lng:126.7052, platform:"island"},
+  {name:"예술회관", lat:37.4489, lng:126.6980, platform:"side"},
+  {name:"인천터미널", lat:37.4405, lng:126.6913, platform:"side"},
+  {name:"문학경기장", lat:37.4358, lng:126.6825, platform:"side"},
+  {name:"선학", lat:37.4275, lng:126.6787, platform:"side"},
+  {name:"신연수", lat:37.4141, lng:126.6763, platform:"side"},
+  {name:"원인재", lat:37.4038, lng:126.6790, platform:"side"},
+  {name:"동춘", lat:37.3948, lng:126.6757, platform:"side"},
+  {name:"동막", lat:37.3878, lng:126.6697, platform:"side"},
+  {name:"캠퍼스타운", lat:37.3838, lng:126.6620, platform:"side"},
+  {name:"테크노파크", lat:37.3862, lng:126.6512, platform:"side"},
+  {name:"지식정보단지", lat:37.3878, lng:126.6390, platform:"side"},
+  {name:"인천대입구", lat:37.3844, lng:126.6289, platform:"side"},
+  {name:"센트럴파크", lat:37.3931, lng:126.6335, platform:"side"},
+  {name:"국제업무지구", lat:37.3968, lng:126.6412, platform:"side"},
+  {name:"송도달빛축제공원", lat:37.3898, lng:126.6486, platform:"island"}
+];
+const $ = id => document.getElementById(id);
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+function bearingBetween(a,b){
+  const p1=toRad(a.lat),p2=toRad(b.lat),dl=toRad(b.lng-a.lng);
+  const y=Math.sin(dl)*Math.cos(p2);
+  const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000,p1=toRad(lat1),p2=toRad(lat2),dp=toRad(lat2-lat1),dl=toRad(lon2-lon1);
+  const a=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function nearestStation(lat,lng){
+  let best=0,bestDist=Infinity;
+  STATIONS.forEach((s,i)=>{const d=haversine(lat,lng,s.lat,s.lng);if(d<bestDist){bestDist=d;best=i;}});
+  return {idx:best,dist:bestDist};
+}
+const clampIdx=i=>Math.max(0,Math.min(STATIONS.length-1,i));
+const neighborIdx=(idx,d)=>clampIdx(idx+(d==="down"?1:-1));
+// 역간 평균 소요시간(초): 거리 / 40km/h (Ver3 추정용)
+function segRunSec(a,b){ return Math.round(haversine(STATIONS[a].lat,STATIONS[a].lng,STATIONS[b].lat,STATIONS[b].lng)/11.1); }
+const ALIGN_THRESHOLD=45, CONFIRM_TICKS=3, MOVE_SPEED=15, STOP_SPEED=5;
+
+/* ═══ 공용 상태 머신 ═══ */
+let mode=1;
+let dir="down", dirLocked=false;
+let state="IDLE";           // IDLE | AT_STATION | MOVING | ESTIMATING
+let curIdx=10, nextIdx=11;
+let doorBearing=null, lastHeading=null;
+let moveTicks=0, stopTicks=0, lastFix=null;
+let stationRadius=350;      // 모드별로 조정
+
+function setSource(cls, text){
+  const c=$("sourceChip");
+  c.className="source-chip "+cls;
+  c.textContent=text;
+}
+function setDir(d, manual){
+  dir=d;
+  if (manual) dirLocked=false;
+  $("dirDown").classList.toggle("active",d==="down");
+  $("dirUp").classList.toggle("active",d==="up");
+  $("dirNote").textContent = dirLocked ? "✓ 이동 방향으로 자동 판별됨" : "";
+  computeDoor();
+}
+function computeDoor(){
+  nextIdx = neighborIdx(curIdx, dir);
+  const from=STATIONS[curIdx], to=STATIONS[nextIdx];
+  const movingLike = (state==="MOVING"||state==="ESTIMATING");
+  const target = movingLike ? to : from;
+  const approachFrom = movingLike ? from : STATIONS[neighborIdx(curIdx, dir==="down"?"up":"down")];
+  const trainBearing = bearingBetween(approachFrom, target);
+  const side = target.platform==="island" ? "left" : "right";
+  doorBearing = (trainBearing + (side==="left"?-90:90) + 360) % 360;
+  $("sideText").textContent = side==="left"?"왼쪽":"오른쪽";
+  $("subNote").textContent = movingLike
+    ? "다음 역 "+target.name+" ("+(target.platform==="island"?"섬식":"상대식")+") 도착 기준"
+    : target.name+"역 ("+(target.platform==="island"?"섬식":"상대식")+") 기준";
+  if (lastHeading!==null) updateArrow(lastHeading);
+  renderRoute();
+}
+function renderRoute(){
+  [1,2,3].forEach(n=>{
+    const strip=$("routeStrip"+n);
+    if (!strip) return;
+    strip.innerHTML="";
+    const span=[];
+    const prev=neighborIdx(curIdx, dir==="down"?"up":"down");
+    const nn=neighborIdx(nextIdx, dir);
+    [prev,curIdx,nextIdx,nn].forEach(i=>{if(!span.includes(i))span.push(i);});
+    span.forEach((i,k)=>{
+      if (k>0){
+        const line=document.createElement("div");
+        let cls="rs-line";
+        if (span[k-1]===curIdx && i===nextIdx){
+          if (state==="MOVING") cls+=" active";
+          if (state==="ESTIMATING") cls+=" est";
+        }
+        line.className=cls;
+        strip.appendChild(line);
+      }
+      const node=document.createElement("div");
+      node.className="rs-node"+(i===curIdx?" here":"")+((i===nextIdx&&(state==="MOVING"||state==="ESTIMATING"))?" next":"");
+      node.innerHTML='<div class="rs-dot"></div><div class="rs-name">'+STATIONS[i].name+'</div>';
+      strip.appendChild(node);
+    });
+  });
+}
+function bannerAtStation(idx, note){
+  state="AT_STATION"; curIdx=idx;
+  $("statusBanner").className="status-banner stopped";
+  $("statusIcon").textContent="🚉";
+  $("statusTitle").innerHTML='<span class="live-dot"></span>현재 역: <span class="hl">'+STATIONS[idx].name+'</span>';
+  $("statusDetail").textContent = note||"정차 중 · 출발하면 자동으로 감지돼요";
+  computeDoor();
+}
+function bannerMoving(detail){
+  state="MOVING";
+  nextIdx=neighborIdx(curIdx,dir);
+  $("statusBanner").className="status-banner moving";
+  $("statusIcon").textContent="🚈";
+  $("statusTitle").innerHTML='<span class="live-dot"></span>'+STATIONS[curIdx].name+' → <span class="hl">'+STATIONS[nextIdx].name+'</span> 이동 중';
+  $("statusDetail").textContent = detail||"도착하면 자동으로 다음 역으로 넘어가요";
+  computeDoor();
+}
+function bannerEstimating(remainSec){
+  state="ESTIMATING";
+  $("statusBanner").className="status-banner estimating";
+  $("statusIcon").textContent="🛰️";
+  $("statusTitle").innerHTML='<span class="live-dot purple"></span>'+STATIONS[curIdx].name+' → <span class="hl">'+STATIONS[nextIdx].name+'</span> 추정 이동 중';
+  $("statusDetail").textContent="GPS 끊김 · 평균 소요시간으로 추정 (도착까지 약 "+remainSec+"초)";
+  computeDoor();
+}
+function autoDetectDir(lat,lng){
+  if (!lastFix) return;
+  const down=neighborIdx(curIdx,"down"), up=neighborIdx(curIdx,"up");
+  const gainDown=haversine(lastFix.lat,lastFix.lng,STATIONS[down].lat,STATIONS[down].lng)-haversine(lat,lng,STATIONS[down].lat,STATIONS[down].lng);
+  const gainUp=haversine(lastFix.lat,lastFix.lng,STATIONS[up].lat,STATIONS[up].lng)-haversine(lat,lng,STATIONS[up].lat,STATIONS[up].lng);
+  dirLocked=true;
+  setDir(gainDown>gainUp?"down":"up", false);
+  $("dirNote").textContent="✓ 이동 방향으로 자동 판별됨";
+}
+function processFix(lat,lng,kmh){
+  $("speedNum").textContent=Math.round(kmh);
+  const near=nearestStation(lat,lng);
+  if (state==="IDLE"){ bannerAtStation(near.idx,"약 "+Math.round(near.dist)+"m 거리에서 감지"); }
+  else if (state==="AT_STATION"){
+    if (kmh>=MOVE_SPEED) moveTicks++; else moveTicks=0;
+    if (moveTicks>=CONFIRM_TICKS){ moveTicks=0; autoDetectDir(lat,lng); bannerMoving(); }
+  } else if (state==="MOVING"||state==="ESTIMATING"){
+    if (state==="ESTIMATING"){ // 신호 복구 → 실측 보정
+      m3_exitEstimating("신호 복구 · 실측으로 보정됨");
+    }
+    const nearNext=haversine(lat,lng,STATIONS[nextIdx].lat,STATIONS[nextIdx].lng)<=stationRadius;
+    if (kmh<=STOP_SPEED && nearNext) stopTicks++; else stopTicks=0;
+    if (stopTicks>=CONFIRM_TICKS){ stopTicks=0; bannerAtStation(nextIdx,"도착! 문이 곧 열려요"); }
+  }
+  lastFix={lat,lng,t:Date.now()};
+}
+
+/* ═══ 프로바이더 정리/탭 전환 ═══ */
+function stopAll(){
+  if (m1_watchId!==null){ navigator.geolocation.clearWatch(m1_watchId); m1_watchId=null; }
+  if (m1_simTimer){ clearInterval(m1_simTimer); m1_simTimer=null; }
+  if (m2_pollTimer){ clearInterval(m2_pollTimer); m2_pollTimer=null; }
+  if (m3_watchId!==null){ navigator.geolocation.clearWatch(m3_watchId); m3_watchId=null; }
+  if (m3_simTimer){ clearInterval(m3_simTimer); m3_simTimer=null; }
+  if (m3_watchdog){ clearInterval(m3_watchdog); m3_watchdog=null; }
+  if (m3_estTimer){ clearInterval(m3_estTimer); m3_estTimer=null; }
+  $("m1_realBtn").textContent="▶ 실제 네트워크 측위"; $("m1_realBtn").classList.remove("stop");
+  $("m1_simBtn").textContent="🎬 시뮬레이션 (오차 포함)";
+  $("m2_pollBtn").textContent="▶ 모의 API 폴링 시작"; $("m2_pollBtn").classList.remove("stop");
+  $("m3_realBtn").textContent="▶ 실제 GPS 추적"; $("m3_realBtn").classList.remove("stop");
+  $("m3_simBtn").textContent="🎬 시뮬레이션 체험";
+  $("m3_signalBtn").disabled=true; m3_signalLost=false;
+  $("m3_signalBtn").textContent="📡 신호 끊김 재현"; $("m3_eta").textContent="";
+}
+function switchMode(n){
+  mode=n; stopAll();
+  state="IDLE"; lastFix=null; moveTicks=0; stopTicks=0;
+  [1,2,3].forEach(v=>{
+    $("tab"+v).classList.toggle("active", v===n);
+    $("pane"+v).classList.toggle("active", v===n);
+  });
+  stationRadius = (n===1) ? 600 : 350;
+  setSource("", "측위 대기");
+  $("statusBanner").className="status-banner";
+  $("statusIcon").textContent="🚉";
+  $("statusTitle").textContent="추적 대기 중";
+  $("statusDetail").textContent="아래에서 추적을 시작해보세요";
+  $("speedNum").textContent="–";
+  renderRoute();
+}
+
+/* ═══ VER 1: 셀룰러/Wi-Fi (네트워크 측위) ═══ */
+let m1_watchId=null, m1_simTimer=null;
+function m1_toggleReal(){
+  const btn=$("m1_realBtn");
+  if (m1_watchId!==null){ stopAll(); $("m1_status").textContent="측위를 멈췄어요."; return; }
+  stopAll();
+  if (!navigator.geolocation){ $("m1_status").textContent="이 브라우저는 위치 정보를 지원하지 않아요."; return; }
+  btn.textContent="⏹ 측위 중지"; btn.classList.add("stop");
+  $("m1_status").textContent="네트워크 기반 측위 중... (저정밀 요청 → 기지국/Wi-Fi 우선)";
+  state="IDLE"; lastFix=null;
+  setSource("net","📶 네트워크 측위");
+  m1_watchId=navigator.geolocation.watchPosition(pos=>{
+    const {latitude,longitude,speed,accuracy}=pos.coords;
+    let kmh;
+    if (typeof speed==="number"&&speed!==null&&!isNaN(speed)) kmh=speed*3.6;
+    else if (lastFix){ const dt=(Date.now()-lastFix.t)/1000; kmh=dt>0?haversine(lastFix.lat,lastFix.lng,latitude,longitude)/dt*3.6:0; }
+    else kmh=0;
+    $("m1_status").textContent="측위 정확도: ±"+Math.round(accuracy)+"m (오차가 크면 역 판정 반경 600m로 흡수)";
+    processFix(latitude,longitude,kmh);
+  }, err=>{ $("m1_status").textContent="위치 오류: "+err.message; },
+  { enableHighAccuracy:false, maximumAge:2000, timeout:15000 }); // 저정밀 = 네트워크 측위 유도
+}
+function m1_toggleSim(){
+  const btn=$("m1_simBtn");
+  if (m1_simTimer){ stopAll(); return; }
+  stopAll();
+  btn.textContent="⏹ 시뮬레이션 중지";
+  state="IDLE"; lastFix=null; dirLocked=false;
+  setSource("net","📶 네트워크 측위 (모의)");
+  let i=STATIONS.findIndex(s=>s.name==="부평");
+  const endIdx=STATIONS.findIndex(s=>s.name==="인천시청");
+  let phase="stop", t=0, prog=0;
+  const NOISE=0.0013; // 약 ±140m 오차
+  m1_simTimer=setInterval(()=>{
+    const a=STATIONS[i], b=STATIONS[clampIdx(i+1)];
+    const nLat=(Math.random()-.5)*NOISE, nLng=(Math.random()-.5)*NOISE;
+    const acc=120+Math.random()*250;
+    $("m1_status").textContent="측위 정확도: ±"+Math.round(acc)+"m (모의 오차)";
+    if (phase==="stop"){
+      processFix(a.lat+nLat, a.lng+nLng, Math.random()*4);
+      if (++t>4){ t=0; phase=(i>=endIdx)?"done":"run"; prog=0; }
+    } else if (phase==="run"){
+      prog=Math.min(1,prog+0.12);
+      processFix(a.lat+(b.lat-a.lat)*prog+nLat, a.lng+(b.lng-a.lng)*prog+nLng,
+                 prog>=1?3:(prog<0.15||prog>0.85?20+Math.random()*10:45+Math.random()*15));
+      if (prog>=1){ i++; phase="stop"; t=0; }
+    } else { stopAll(); $("m1_status").textContent="시뮬레이션 종료 · 인천시청 도착"; }
+  },700);
+}
+
+/* ═══ VER 2: 열차 실시간 운행 API (모의 서버) ═══ */
+let m2_pollTimer=null;
+// 모의 API 서버: 실제 서버라면 이 부분이 fetch()가 됨
+const mockServer = {
+  trainNo:"1023", i:10, phase:"stop", t:0, prog:0, endIdx:14,
+  tick(){
+    if (this.phase==="stop"){
+      if (++this.t>3){ this.t=0; this.phase=(this.i>=this.endIdx)?"done":"run"; this.prog=0; }
+    } else if (this.phase==="run"){
+      this.prog=Math.min(1,this.prog+0.25);
+      if (this.prog>=1){ this.i++; this.phase="stop"; this.t=0; }
+    }
+  },
+  response(){
+    return {
+      trainNo:this.trainNo,
+      updnLine: dir==="down"?"하행":"상행",
+      statnNm: STATIONS[this.i].name,
+      trainSttus: this.phase==="run"?"1":"0", // 0:정차(도착) 1:이동(출발)
+      nextStatnNm: STATIONS[clampIdx(this.i+1)].name,
+      recptnDt: new Date().toTimeString().slice(0,8)
+    };
+  }
+};
+/* 실제 연동 예시 (참고용):
+   fetch("http://swopenapi.seoul.go.kr/api/subway/{KEY}/json/realtimePosition/0/50/1호선")
+   → 응답의 statnNm(현재역), trainSttus(0진입/1도착/2출발) 등을 아래와 동일하게 매핑 */
+function m2_togglePoll(){
+  const btn=$("m2_pollBtn");
+  if (m2_pollTimer){ stopAll(); $("m2_status").textContent="폴링을 멈췄어요."; return; }
+  stopAll();
+  btn.textContent="⏹ 폴링 중지"; btn.classList.add("stop");
+  state="IDLE"; setSource("api","🛜 열차 API");
+  mockServer.i=10; mockServer.phase="stop"; mockServer.t=0; mockServer.prog=0;
+  $("m2_status").textContent="폴링 주기: 2초 · 열차 "+mockServer.trainNo+"호에 탑승했다고 가정";
+  m2_pollTimer=setInterval(()=>{
+    mockServer.tick();
+    const res=mockServer.response();
+    m2_log(JSON.stringify(res));
+    // API 응답 → 상태 머신 반영 (내 위치 대신 열차 위치를 신뢰)
+    const idx=STATIONS.findIndex(s=>s.name===res.statnNm);
+    if (idx<0) return;
+    $("speedNum").textContent = res.trainSttus==="1" ? "40" : "0";
+    if (res.trainSttus==="1"){
+      curIdx=idx;
+      if (state!=="MOVING") bannerMoving("API 기준 · "+res.nextStatnNm+" 접근 중");
+    } else {
+      if (state!=="AT_STATION"||curIdx!==idx) bannerAtStation(idx,"API 기준 도착 확인 ("+res.recptnDt+")");
+    }
+    if (mockServer.phase==="done"){ stopAll(); $("m2_status").textContent="모의 운행 종료 · 인천시청 도착"; }
+  },2000);
+}
+function m2_log(line){
+  const el=$("m2_log");
+  el.textContent=(el.textContent==="API 응답 로그가 여기에 표시돼요"?"":el.textContent+"\n")+line;
+  el.scrollTop=el.scrollHeight;
+}
+function m2_clearLog(){ $("m2_log").textContent="API 응답 로그가 여기에 표시돼요"; }
+
+/* ═══ VER 3: GPS + 타이머 추정 ═══ */
+let m3_watchId=null, m3_simTimer=null, m3_watchdog=null, m3_estTimer=null;
+let m3_signalLost=false, m3_lastFixTime=0, m3_estRemain=0;
+const SIGNAL_TIMEOUT=6000; // ms
+
+function m3_startWatchdog(){
+  m3_lastFixTime=Date.now();
+  m3_watchdog=setInterval(()=>{
+    if (state==="MOVING" && Date.now()-m3_lastFixTime>SIGNAL_TIMEOUT && !m3_estTimer){
+      m3_enterEstimating();
+    }
+  },1000);
+}
+function m3_enterEstimating(){
+  // 마지막 위치에서 다음 역까지 남은 거리 → 평균 속도(40km/h)로 남은 시간 추정
+  let remain=segRunSec(curIdx,nextIdx);
+  if (lastFix){
+    const d=haversine(lastFix.lat,lastFix.lng,STATIONS[nextIdx].lat,STATIONS[nextIdx].lng);
+    remain=Math.max(5, Math.round(d/11.1));
+  }
+  m3_estRemain=remain;
+  bannerEstimating(m3_estRemain);
+  setSource("est","🛰️ 타이머 추정 중");
+  m3_estTimer=setInterval(()=>{
+    m3_estRemain--;
+    $("m3_eta").textContent="추정 도착까지 "+Math.max(0,m3_estRemain)+"초";
+    if (state==="ESTIMATING") $("statusDetail").textContent="GPS 끊김 · 평균 소요시간으로 추정 (도착까지 약 "+Math.max(0,m3_estRemain)+"초)";
+    if (m3_estRemain<=0){
+      clearInterval(m3_estTimer); m3_estTimer=null;
+      bannerAtStation(nextIdx,"⏱ 추정 도착 (신호 복구 시 실측 보정됨)");
+      $("m3_eta").textContent="";
+      setSource("est","🛰️ 추정값 (미확정)");
+      // 다음 구간도 계속 추정: 정차 25초 후 재출발 가정
+      setTimeout(()=>{
+        if (state==="AT_STATION" && m3_estTimer===null && (m3_signalLost || Date.now()-m3_lastFixTime>SIGNAL_TIMEOUT)){
+          if ((m3_simTimer||m3_watchId!==null)){ bannerMoving("추정 재출발 (신호 없음)"); m3_enterEstimating(); }
+        }
+      },25000*0.2); // 데모라 5초로 단축
+    }
+  },1000);
+}
+function m3_exitEstimating(msg){
+  if (m3_estTimer){ clearInterval(m3_estTimer); m3_estTimer=null; }
+  $("m3_eta").textContent="";
+  setSource("gps","📡 GPS 실측");
+  if (msg) $("m3_status").textContent=msg;
+}
+function m3_toggleReal(){
+  const btn=$("m3_realBtn");
+  if (m3_watchId!==null){ stopAll(); $("m3_status").textContent="추적을 멈췄어요."; return; }
+  stopAll();
+  if (!navigator.geolocation){ $("m3_status").textContent="이 브라우저는 위치 정보를 지원하지 않아요."; return; }
+  btn.textContent="⏹ 추적 중지"; btn.classList.add("stop");
+  $("m3_status").textContent="GPS 추적 중 · 6초간 신호가 없으면 자동으로 추정 모드로 전환돼요";
+  state="IDLE"; lastFix=null;
+  setSource("gps","📡 GPS 실측");
+  m3_startWatchdog();
+  m3_watchId=navigator.geolocation.watchPosition(pos=>{
+    m3_lastFixTime=Date.now();
+    m3_exitEstimating();
+    const {latitude,longitude,speed}=pos.coords;
+    let kmh;
+    if (typeof speed==="number"&&speed!==null&&!isNaN(speed)) kmh=speed*3.6;
+    else if (lastFix){ const dt=(Date.now()-lastFix.t)/1000; kmh=dt>0?haversine(lastFix.lat,lastFix.lng,latitude,longitude)/dt*3.6:0; }
+    else kmh=0;
+    processFix(latitude,longitude,kmh);
+  }, err=>{ $("m3_status").textContent="위치 오류: "+err.message+" (추정 모드가 이어받아요)"; },
+  { enableHighAccuracy:true, maximumAge:1000, timeout:15000 });
+}
+function m3_toggleSim(){
+  const btn=$("m3_simBtn");
+  if (m3_simTimer){ stopAll(); return; }
+  stopAll();
+  btn.textContent="⏹ 시뮬레이션 중지";
+  $("m3_signalBtn").disabled=false;
+  state="IDLE"; lastFix=null; dirLocked=false; m3_signalLost=false;
+  setSource("gps","📡 GPS 실측 (모의)");
+  $("m3_status").textContent="달리는 도중 📡 버튼을 눌러 터널 진입(신호 끊김)을 재현해보세요";
+  m3_startWatchdog();
+  let i=STATIONS.findIndex(s=>s.name==="부평");
+  const endIdx=STATIONS.findIndex(s=>s.name==="송도달빛축제공원");
+  let phase="stop", t=0, prog=0;
+  m3_simTimer=setInterval(()=>{
+    const a=STATIONS[i], b=STATIONS[clampIdx(i+1)];
+    // 내부 열차는 계속 달림. 신호 끊김이면 fix를 안 보냄 → 추정 모드가 이어받음
+    let lat, lng, kmh;
+    if (phase==="stop"){
+      lat=a.lat; lng=a.lng; kmh=Math.random()*3;
+      if (++t>4){ t=0; phase=(i>=endIdx)?"done":"run"; prog=0; }
+    } else if (phase==="run"){
+      prog=Math.min(1,prog+0.09);
+      lat=a.lat+(b.lat-a.lat)*prog; lng=a.lng+(b.lng-a.lng)*prog;
+      kmh=prog>=1?3:(prog<0.15||prog>0.85?20+Math.random()*10:45+Math.random()*15);
+      if (prog>=1){ i++; phase="stop"; t=0; }
+    } else { stopAll(); $("m3_status").textContent="시뮬레이션 종료"; return; }
+    if (!m3_signalLost){
+      m3_lastFixTime=Date.now();
+      m3_exitEstimating();
+      processFix(lat,lng,kmh);
+    }
+  },700);
+}
+function m3_toggleSignal(){
+  m3_signalLost=!m3_signalLost;
+  $("m3_signalBtn").textContent = m3_signalLost ? "📡 신호 복구" : "📡 신호 끊김 재현";
+  if (m3_signalLost){
+    $("m3_status").textContent="🕳 터널 진입! GPS 신호 없음 → 6초 뒤 추정 모드로 전환돼요";
+  } else {
+    $("m3_status").textContent="신호 복구 · 다음 실측값으로 즉시 보정됩니다";
+  }
+}
+
+/* ═══ 공용 나침반 ═══ */
+function startCompass(){
+  const enableListen=()=>{
+    if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    else window.addEventListener('deviceorientation', handleOrientation, true);
+    compassReady();
+  };
+  if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission().then(s=>{
+      if (s==='granted') enableListen(); else manualFallback("센서 권한이 거부됐어요. 수동 모드로 확인해보세요.");
+    }).catch(()=>manualFallback("센서를 사용할 수 없어요. 수동 모드로 확인해보세요."));
+  } else if (typeof DeviceOrientationEvent!=='undefined' || 'ondeviceorientationabsolute' in window){
+    enableListen();
+  } else manualFallback("이 기기는 방향 센서를 지원하지 않아요. 수동 모드로 확인해보세요.");
+}
+function compassReady(){
+  $("placeholder").style.display="none";
+  $("needleWrap").style.display="flex";
+  $("startBtn").style.display="none";
+  $("alignBadge").textContent="센서 연결됨 · 정렬 대기";
+}
+function manualFallback(msg){
+  $("alignBadge").textContent=msg;
+  $("placeholder").style.display="none";
+  $("needleWrap").style.display="flex";
+  $("startBtn").style.display="none";
+  $("manualRow").style.display="block";
+  onHeading(0);
+}
+function handleOrientation(e){
+  let heading;
+  if (typeof e.webkitCompassHeading==="number") heading=e.webkitCompassHeading;
+  else if (e.alpha!==null && e.absolute!==false) heading=(360-e.alpha)%360;
+  else return;
+  onHeading(heading);
+}
+function onHeading(heading){
+  lastHeading=heading;
+  updateArrow(heading);
+}
+function updateArrow(heading){
+  if (doorBearing===null) return;
+  const rel=((doorBearing-heading)%360+360)%360;
+  $("needleWrap").style.transform="rotate("+rel+"deg)";
+  const delta=Math.min(rel,360-rel);
+  const aligned=delta<=ALIGN_THRESHOLD;
+  $("arrowSvg").classList.toggle("misaligned",!aligned);
+  $("alignBadge").classList.toggle("on",aligned);
+  $("alignBadge").classList.toggle("off",!aligned);
+  $("doorBg").classList.toggle("open",aligned);
+  $("alignBadge").textContent=aligned?"✓ 이 방향이 하차 방향이에요":"화살표 쪽으로 몸을 돌려보세요";
+  const mv=$("manualVal"); if (mv) mv.textContent=Math.round(heading)+"°";
+}
+
+renderRoute();
+computeDoor();
+</script>
+
+<div id="installTip" style="display:none;position:fixed;left:16px;right:16px;bottom:16px;z-index:100;
+  background:#131a2a;border:1px solid #ffb020;border-radius:14px;padding:13px 14px;
+  font-size:13px;line-height:1.6;color:#eef2f8;box-shadow:0 8px 30px rgba(0,0,0,.5);">
+  📲 <b>홈 화면에 추가</b>하면 앱처럼 쓸 수 있어요!<br>
+  <span style="color:#8b96ab;font-size:12px;" id="installHow"></span>
+  <button onclick="this.parentElement.style.display='none';localStorage.setItem('installTipDismissed','1')"
+    style="position:absolute;top:8px;right:10px;background:none;border:none;color:#8b96ab;font-size:16px;cursor:pointer;">✕</button>
+</div>
+<script>
+// ── PWA: 서비스 워커 등록 ──
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(err => console.log("SW 등록 실패:", err));
+  });
+}
+// ── 홈 화면 추가 안내 (standalone이 아닐 때 1회) ──
+(function(){
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  if (isStandalone || localStorage.getItem("installTipDismissed")) return;
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const tip = document.getElementById("installTip");
+  const how = document.getElementById("installHow");
+  setTimeout(()=>{
+    how.textContent = isIOS
+      ? "Safari 공유 버튼(⬆︎) → \"홈 화면에 추가\"를 눌러주세요"
+      : "브라우저 메뉴(⋮) → \"홈 화면에 추가\" 또는 \"앱 설치\"를 눌러주세요";
+    tip.style.display = "block";
+  }, 2500);
+})();
+</script>
+</body>
+</html>
