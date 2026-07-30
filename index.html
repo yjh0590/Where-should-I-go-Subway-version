@@ -155,6 +155,16 @@
     <p class="desc">자동 추적이 기본이에요. 지하에서 GPS가 끊기는 문제를 푸는 세 가지 측위 방식을 탭으로 골라 테스트해보세요.</p>
   </header>
 
+  <div class="card" id="onboardTip" style="display:none;border-color:var(--amber);">
+    <div class="desc-note" style="margin-bottom:8px;">
+      📱 <b>처음 쓰시나요?</b><br>
+      1) 화면을 아래로 내려서 <b>나침반 켜기</b>를 누르면 방향센서 권한을 물어봐요, 허용해주세요.<br>
+      2) 화면이 <b>본인 얼굴을 향하도록 수직</b>으로 들고 써야 방향이 정확해요.<br>
+      3) 지하철 내부는 자성 간섭이 있어서 나침반이 흔들릴 수 있어요 — 흔들리면 폰을 8자로 돌리면 보정돼요.
+    </div>
+    <button class="alt-btn" style="width:100%;" onclick="document.getElementById('onboardTip').style.display='none';localStorage.setItem('onboardTipDismissed','1')">확인했어요</button>
+  </div>
+
   <div class="tabs">
     <button class="tab active" id="tab1" onclick="switchMode(1)">Ver 1<small>셀룰러/Wi-Fi</small></button>
     <button class="tab" id="tab2" onclick="switchMode(2)">Ver 2<small>열차 API</small></button>
@@ -189,13 +199,13 @@
   <!-- Ver2: 열차 API -->
   <div class="mode-pane" id="pane2">
     <div class="desc-note"><b>Ver 2 · 열차 실시간 운행 API</b><br>
-      내 폰의 위치가 아니라, "지금 이 노선의 열차들이 어느 역에 있는지"를 알려주는 공개 API를 폴링해요. 지하 여부와 무관하게 정확하다는 게 최대 장점. 여기서는 실제 API 대신 <b>모의 API 서버</b>를 붙여서 응답 형식과 흐름을 그대로 재현했어요. (실제 연동 시: 서울 열린데이터광장 실시간 위치정보, 인천교통공사 API — 키 발급 필요)</div>
+      내 폰의 위치가 아니라, "지금 이 노선의 열차들이 어느 역에 있는지"를 알려주는 공개 API를 폴링해요. 지하 여부와 무관하게 정확하다는 게 최대 장점. <b>단, 아래 버튼은 실제 API가 아니라 부평→인천시청 구간을 재생하는 고정 시나리오예요 — 실제 내 위치와 무관하게 항상 같은 값이 나와요.</b> (실제 연동 시: 서울 열린데이터광장 실시간 위치정보, 인천교통공사 API — 키 발급 필요)</div>
     <div class="card">
       <div class="btn-row">
         <button class="go-btn" id="m2_pollBtn" onclick="m2_togglePoll()">▶ 모의 API 폴링 시작</button>
         <button class="alt-btn" onclick="m2_clearLog()">로그 지우기</button>
       </div>
-      <div class="mode-status" id="m2_status">폴링 주기: 2초 · 내가 탄 열차를 자동 매칭한다고 가정</div>
+      <div class="mode-status" id="m2_status">폴링 주기: 2초 · 고정 시나리오 재생(실제 내 위치와 무관)</div>
       <div class="api-log" id="m2_log">API 응답 로그가 여기에 표시돼요</div>
       <div class="route-strip" id="routeStrip2"></div>
     </div>
@@ -361,7 +371,9 @@ function computeDoor(){
   const target = movingLike ? to : from;
   const approachFrom = movingLike ? from : STATIONS[neighborIdx(curIdx, dir==="down"?"up":"down")];
   const trainBearing = bearingBetween(approachFrom, target);
-  const side = target.platform==="island" ? "left" : "right";
+  // ponytail: 상대식(side) 역은 "오른쪽", 섬식(island)은 "왼쪽"으로 추정한 미검증 값.
+  // 실측 후 station.door={up:"left"|"right", down:"left"|"right"}를 채우면 이 추정 대신 그 값을 씀.
+  const side = (target.door && target.door[dir]) || (target.platform==="island" ? "left" : "right");
   doorBearing = (trainBearing + (side==="left"?-90:90) + 360) % 360;
   $("sideText").textContent = side==="left"?"왼쪽":"오른쪽";
   $("subNote").textContent = movingLike
@@ -442,9 +454,9 @@ function processFix(lat,lng,kmh){
     if (state==="ESTIMATING"){ // 신호 복구 → 실측 보정
       m3_exitEstimating("신호 복구 · 실측으로 보정됨");
     }
-    const nearNext=haversine(lat,lng,STATIONS[nextIdx].lat,STATIONS[nextIdx].lng)<=stationRadius;
-    if (kmh<=STOP_SPEED && nearNext) stopTicks++; else stopTicks=0;
-    if (stopTicks>=CONFIRM_TICKS){ stopTicks=0; bannerAtStation(nextIdx,"도착! 문이 곧 열려요"); }
+    // 예측한 nextIdx가 아니라 실제 최근접역(near)으로 판정: GPS 지연으로 판정이 밀려도 다음 fix에서 자동 보정됨
+    if (kmh<=STOP_SPEED && near.dist<=stationRadius) stopTicks++; else stopTicks=0;
+    if (stopTicks>=CONFIRM_TICKS){ stopTicks=0; bannerAtStation(near.idx,"도착! 문이 곧 열려요"); }
   }
   lastFix={lat,lng,t:Date.now()};
 }
@@ -567,7 +579,7 @@ function m2_togglePoll(){
   btn.textContent="⏹ 폴링 중지"; btn.classList.add("stop");
   state="IDLE"; setSource("api","🛜 열차 API");
   mockServer.i=10; mockServer.phase="stop"; mockServer.t=0; mockServer.prog=0;
-  $("m2_status").textContent="폴링 주기: 2초 · 열차 "+mockServer.trainNo+"호에 탑승했다고 가정";
+  $("m2_status").textContent="열차 "+mockServer.trainNo+"호 고정 시나리오 재생 중 (실제 내 위치와 무관)";
   m2_pollTimer=setInterval(()=>{
     mockServer.tick();
     const res=mockServer.response();
@@ -785,6 +797,7 @@ function renderStationInfo(){
 renderRoute();
 computeDoor();
 initStationInfo();
+if (!localStorage.getItem('onboardTipDismissed')) $("onboardTip").style.display="block";
 </script>
 
 <div id="installTip" style="display:none;position:fixed;left:16px;right:16px;bottom:16px;z-index:100;
