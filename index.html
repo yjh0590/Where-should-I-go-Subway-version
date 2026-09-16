@@ -261,6 +261,15 @@
   .hero-direction{font-size:clamp(29px,9vw,38px);line-height:1.12;color:#172f56;margin-top:18px;word-break:keep-all;overflow-wrap:anywhere;}
   .hero-direction::after{content:"";display:block;width:42px;height:4px;border-radius:999px;background:var(--blue);margin:10px auto 0;}
   .hero-station{display:table;margin:9px auto 0;padding:5px 10px;border-radius:999px;background:#eef4ff;color:#526783;font-size:12px;}
+  .line-selector{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;background:#fff;border:1px solid var(--panel-edge);
+    border-radius:14px;padding:9px 10px;margin-bottom:12px;box-shadow:0 8px 22px rgba(38,76,135,.07);}
+  .line-selector label{font-size:11px;font-weight:900;color:var(--text-dim);}
+  .line-selector select{min-width:0;width:100%;border:0;background:#f4f7fb;color:var(--text);border-radius:9px;padding:9px 10px;
+    font:800 14px/1 inherit;outline:none;}
+  .line-support{font-size:10px;font-weight:900;color:var(--green);white-space:nowrap;}
+  .line-support.pending{color:var(--amber);}
+  .line-badge{border:0;cursor:default;padding:0 10px;}
+  button:disabled{cursor:not-allowed;opacity:.45;box-shadow:none;}
   @media (max-width:360px){.hero-direction{font-size:27px}.hero-compass{width:min(78vw,264px)}.bearing-label{font-size:9px}}
   @media (prefers-reduced-motion:reduce){.hero-arrow-wrap,.hero-compass-dial{transition:none}.door-hero.arrived .hero-compass{animation:none}}
 </style>
@@ -273,10 +282,26 @@
         <div class="eyebrow">DOOR COMPASS <span class="beta-badge">BETA</span></div>
         <h1>내리는 문<span class="dot">.</span></h1>
       </div>
-      <span class="line-badge">인천 1</span>
+      <span class="line-badge" id="lineBadge">인천 1</span>
     </div>
     <p class="desc">사람이 많아도 화살표만 따라가면, 열리는 문을 찾을 수 있어요.</p>
   </header>
+
+  <div class="line-selector">
+    <label for="lineSelect">노선</label>
+    <select id="lineSelect" onchange="selectLine(this.value)" aria-label="수도권 지하철 노선 선택">
+      <option value="L1">1호선</option><option value="L2">2호선</option><option value="L3">3호선</option>
+      <option value="L4">4호선</option><option value="L5">5호선</option><option value="L6">6호선</option>
+      <option value="L7">7호선</option><option value="L8">8호선</option><option value="L9">9호선</option>
+      <option value="ICN1" selected>인천 1호선</option><option value="ICN2">인천 2호선</option>
+      <option value="GYEONGUI">경의·중앙선</option><option value="SUIN">수인·분당선</option>
+      <option value="GYEONGCHUN">경춘선</option><option value="GYEONGGANG">경강선</option><option value="SEOHAE">서해선</option>
+      <option value="AREX">공항철도</option><option value="SHINBUNDANG">신분당선</option>
+      <option value="UI">우이신설선</option><option value="SILLIM">신림선</option><option value="GIMPO">김포골드라인</option>
+      <option value="EVER">용인 에버라인</option><option value="U_LINE">의정부경전철</option><option value="GTXA">GTX-A</option>
+    </select>
+    <span class="line-support" id="lineSupport">베타 지원</span>
+  </div>
 
   <section class="door-hero checking" id="doorHero" aria-live="polite">
     <div class="hero-meta">
@@ -328,7 +353,7 @@
     </div>
   </details>
 
-  <details class="fold">
+  <details class="fold" id="advancedTests">
     <summary>고급 테스트 · 측위 방식 선택</summary>
     <div class="fold-body">
 
@@ -436,21 +461,21 @@
     <summary>데이터 출처와 검증 상태</summary>
     <div class="fold-body">
       <div class="card data-note">
-        <strong>인천 1호선 베타 데이터</strong><br>
-        역 좌표와 문 방향은 오프라인 저장본으로 동작합니다. 인천교통공사의 공개 목록에서 역정보·노선정보·시각표·역간 소요시간·열차 안내방송 자료는 확인했지만, 실시간 열차 위치와 방면별 문 방향 API는 아직 확인되지 않았습니다.<br><br>
-        <a href="https://www.ictr.or.kr/main/openinfo/public_list.jsp" target="_blank" rel="noopener">인천교통공사 공공데이터 제공목록 보기</a>
+        <strong>수도권 전체 노선 구조 · 문 방향 데이터 단계적 검증</strong><br>
+        수도권 24개 노선을 선택할 수 있습니다. 현재 실제 위치 추적과 문 방향 안내가 활성화된 노선은 인천 1호선 베타 데이터뿐이며, 다른 노선은 국가철도공단 역사·노선 데이터와 방면별 문 방향 검증 후 순차 활성화합니다. 검증되지 않은 노선에는 방향을 표시하지 않습니다.<br><br>
+        <a href="https://data.kric.go.kr/" target="_blank" rel="noopener">국가철도공단 철도데이터포털 보기</a>
       </div>
     </div>
   </details>
 
   <footer>
-    ※ 인천 1호선 근사 좌표와 베타 문 방향 데이터로 동작합니다. 실제 이용 전 역별·방면별 문 방향 검증이 필요합니다. 위치가 불확실할 때는 방향을 추측하지 않고 확인 중으로 표시합니다.
+    ※ 수도권 노선 선택 구조를 지원하며, 현재 문 방향 안내가 활성화된 노선은 인천 1호선 베타 데이터입니다. 검증되지 않은 노선은 방향을 추측하지 않습니다.
   </footer>
 </div>
 
 <script>
 /* ═══ 공용 데이터/유틸 ═══ */
-const STATIONS = [
+const INCHEON_LINE_1_STATIONS = [
   {name:"계양", lat:37.5713, lng:126.7379, platform:"side"},
   {name:"귤현", lat:37.5654, lng:126.7317, platform:"side"},
   {name:"박촌", lat:37.5561, lng:126.7280, platform:"side"},
@@ -484,7 +509,7 @@ const STATIONS = [
 ];
 // 문 방향은 승강장 형식에서 계산하지 않고 역·방면별로 직접 관리합니다.
 // 현재 값은 베타 데이터이며, 현장 검증 결과에 따라 각 방면을 독립 수정할 수 있습니다.
-const DOOR_DIRECTIONS = {
+const INCHEON_LINE_1_DOORS = {
   "계양":{down:"right",up:"right"}, "귤현":{down:"right",up:"right"},
   "박촌":{down:"right",up:"right"}, "임학":{down:"right",up:"right"},
   "계산":{down:"right",up:"right"}, "경인교대입구":{down:"right",up:"right"},
@@ -501,6 +526,26 @@ const DOOR_DIRECTIONS = {
   "인천대입구":{down:"right",up:"right"}, "센트럴파크":{down:"right",up:"right"},
   "국제업무지구":{down:"right",up:"right"}, "송도달빛축제공원":{down:"left",up:"left"}
 };
+const LINE_CATALOG = {
+  L1:{name:"1호선",badge:"1",color:"#0052A4"}, L2:{name:"2호선",badge:"2",color:"#00A84D"},
+  L3:{name:"3호선",badge:"3",color:"#EF7C1C"}, L4:{name:"4호선",badge:"4",color:"#00A5DE"},
+  L5:{name:"5호선",badge:"5",color:"#996CAC"}, L6:{name:"6호선",badge:"6",color:"#CD7C2F"},
+  L7:{name:"7호선",badge:"7",color:"#747F00"}, L8:{name:"8호선",badge:"8",color:"#E6186C"},
+  L9:{name:"9호선",badge:"9",color:"#BDB092"},
+  ICN1:{name:"인천 1호선",badge:"인천 1",color:"#7CA8D5",supported:true,stations:INCHEON_LINE_1_STATIONS,doors:INCHEON_LINE_1_DOORS},
+  ICN2:{name:"인천 2호선",badge:"인천 2",color:"#ED8B00"},
+  GYEONGUI:{name:"경의·중앙선",badge:"경의중앙",color:"#77C4A3"}, SUIN:{name:"수인·분당선",badge:"수인분당",color:"#FABE00"},
+  GYEONGCHUN:{name:"경춘선",badge:"경춘",color:"#0C8E72"}, GYEONGGANG:{name:"경강선",badge:"경강",color:"#003DA5"},
+  SEOHAE:{name:"서해선",badge:"서해",color:"#8FC31F"}, AREX:{name:"공항철도",badge:"공항",color:"#0090D2"},
+  SHINBUNDANG:{name:"신분당선",badge:"신분당",color:"#D4003B"}, UI:{name:"우이신설선",badge:"우이",color:"#B7C450"},
+  SILLIM:{name:"신림선",badge:"신림",color:"#6789CA"}, GIMPO:{name:"김포골드라인",badge:"김포",color:"#A17800"},
+  EVER:{name:"용인 에버라인",badge:"에버",color:"#6FB245"}, U_LINE:{name:"의정부경전철",badge:"의정부",color:"#FDA600"},
+  GTXA:{name:"GTX-A",badge:"GTX-A",color:"#9A6292"}
+};
+let activeLineId="ICN1";
+let STATIONS=INCHEON_LINE_1_STATIONS;
+let DOOR_DIRECTIONS=INCHEON_LINE_1_DOORS;
+const activeLine=()=>LINE_CATALOG[activeLineId];
 const $ = id => document.getElementById(id);
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
 function bearingBetween(a,b){
@@ -536,6 +581,52 @@ let moveTicks=0, stopTicks=0, lastFix=null;
 let stationRadius=600;      // 모드별로 조정 (초기 모드는 Ver 1)
 let autoTracking=false;
 
+function renderUnsupportedLine(){
+  const line=activeLine();
+  doorBearing=null; currentDoorSide=null; lastFix=null; state="IDLE";
+  $("doorHero").className="door-hero checking";
+  $("heroState").textContent="문 방향 데이터 준비 중";
+  $("heroDirection").textContent=line.name;
+  $("heroStation").textContent="수도권 노선 · 공식 데이터 검증 전";
+  $("heroSource").textContent="추적 사용 불가";
+  $("heroArrowWrap").style.transform="rotate(0deg)";
+  $("heroSideText").textContent="이 노선은 아직 문 방향 검증 전입니다";
+  $("heroHelp").textContent="검증되지 않은 방향은 표시하지 않습니다.";
+  $("statusBanner").className="status-banner";
+  $("statusIcon").textContent="🗂️";
+  $("statusTitle").textContent=line.name+" 데이터 준비 중";
+  $("statusDetail").textContent="역·방면별 문 열림 방향을 검증한 뒤 활성화합니다";
+  $("sourceChip").className="source-chip";
+  $("sourceChip").textContent="검증 전";
+  $("speedNum").textContent="–";
+  ["leftDoorMark","rightDoorMark"].forEach(id=>$(id).classList.remove("active"));
+  [1,2,3].forEach(n=>{const strip=$("routeStrip"+n);if(strip)strip.innerHTML="";});
+}
+
+function selectLine(id){
+  if (!LINE_CATALOG[id]) return;
+  activeLineId=id;
+  const line=activeLine();
+  stopAll();
+  STATIONS=line.stations||INCHEON_LINE_1_STATIONS;
+  DOOR_DIRECTIONS=line.doors||{};
+  curIdx=10; nextIdx=11; dir="down"; dirLocked=false; lastFix=null; state="IDLE";
+  calibratedFrontHeading=null; currentDoorSide=null; doorBearing=null;
+  $("lineSelect").value=id;
+  $("lineBadge").textContent=line.badge;
+  $("lineBadge").style.background=line.color;
+  $("lineSupport").textContent=line.supported?"베타 지원":"검증 준비 중";
+  $("lineSupport").classList.toggle("pending",!line.supported);
+  ["autoTrackBtn","calibrateBtn","dirDown","dirUp"].forEach(controlId=>$(controlId).disabled=!line.supported);
+  $("advancedTests").querySelectorAll("button").forEach(btn=>btn.disabled=!line.supported);
+  if ($("m3_signalBtn")) $("m3_signalBtn").disabled=true;
+  if (!line.supported){ renderUnsupportedLine(); return; }
+  $("dirDown").textContent="송도 방면 ↓"; $("dirUp").textContent="계양 방면 ↑";
+  $("dirDown").classList.add("active"); $("dirUp").classList.remove("active");
+  setSource("","자동 추적 대기");
+  computeDoor();
+}
+
 function setSource(cls, text){
   const c=$("sourceChip");
   c.className="source-chip "+cls;
@@ -551,6 +642,7 @@ function setDir(d, manual){
   computeDoor();
 }
 function computeDoor(){
+  if (!activeLine().supported){ renderUnsupportedLine(); return; }
   nextIdx = neighborIdx(curIdx, dir);
   const from=STATIONS[curIdx], to=STATIONS[nextIdx];
   const movingLike = (state==="MOVING"||state==="ESTIMATING");
@@ -560,7 +652,7 @@ function computeDoor(){
     $("doorHero").className="door-hero checking";
     $("heroState").textContent=autoTracking?"위치 확인 중":"문 방향 확인 전";
     $("heroDirection").textContent=autoTracking?"현재 역 확인 중":"현재 역 확인 전";
-    $("heroStation").textContent=autoTracking?"인천 1호선 · 위치를 찾고 있어요":"인천 1호선 · 자동 추적 대기";
+    $("heroStation").textContent=autoTracking?activeLine().name+" · 위치를 찾고 있어요":activeLine().name+" · 자동 추적 대기";
     $("leftDoorMark").classList.remove("active");
     $("rightDoorMark").classList.remove("active");
     $("heroArrowWrap").style.transform="rotate(0deg)";
@@ -623,6 +715,7 @@ function setAutoButton(active){
   btn.textContent=active?"⏹ 자동 추적 중지":"▶ 자동 추적 시작";
 }
 function autoToggle(){
+  if (!activeLine().supported){ renderUnsupportedLine(); return; }
   if (autoTracking || m3_watchId!==null){
     stopAll();
     state="IDLE"; lastFix=null;
@@ -656,6 +749,10 @@ function calibrateTrainFront(){
   computeDoor();
 }
 function renderRoute(){
+  if (!activeLine().supported){
+    [1,2,3].forEach(n=>{const strip=$("routeStrip"+n);if(strip)strip.innerHTML="";});
+    return;
+  }
   [1,2,3].forEach(n=>{
     const strip=$("routeStrip"+n);
     if (!strip) return;
@@ -1087,8 +1184,7 @@ function updateArrow(heading){
   const mv=$("manualVal"); if (mv) mv.textContent=Math.round(heading)+"°";
 }
 
-renderRoute();
-computeDoor();
+selectLine("ICN1");
 </script>
 
 <div id="installTip" style="display:none;position:fixed;left:16px;right:16px;bottom:16px;z-index:100;
