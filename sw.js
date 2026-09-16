@@ -1,5 +1,5 @@
-// 내리는 문 — 3단계 자동 전환용 오프라인 캐시
-const CACHE = "naerineun-mun-step3-v1";
+// 내리는 문 — 4단계 API 연결용 오프라인 캐시
+const CACHE = "naerineun-mun-step4-v1";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -23,6 +23,12 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+
+  // Worker 주소 설정은 배포 후 바뀔 수 있으므로 항상 네트워크에서 확인합니다.
+  if (url.origin === self.location.origin && url.pathname.endsWith("/config.js")) {
+    event.respondWith(fetch(event.request, {cache:"no-store"}));
+    return;
+  }
 
   // 실시간 도착정보는 오래된 캐시를 사용하면 안 됩니다.
   if (url.pathname.includes("/api/subway/")) {
