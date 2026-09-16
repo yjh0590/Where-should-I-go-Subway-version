@@ -474,6 +474,7 @@
   </footer>
 </div>
 
+<script src="config.js"></script>
 <script src="data/stations-seoul.js"></script>
 <script>
 /* ═══ 공용 데이터/유틸 ═══ */
@@ -1069,7 +1070,7 @@ function m1_toggleSim(){
 }
 
 /* ═══ VER 2: 서울시 실시간 도착정보 API ═══ */
-const API_POLL_MS=5000;
+const API_POLL_MS=15000;
 const apiBaseUrl=()=>String(window.SUBWAY_API_BASE_URL||"").replace(/\/$/,"");
 let m2_pollTimer=null, m2_pollInFlight=false, trackedTrainNo=null;
 
