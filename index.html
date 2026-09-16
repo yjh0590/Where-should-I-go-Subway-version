@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -380,13 +381,13 @@
   <!-- Ver2: 열차 API -->
   <div class="mode-pane" id="pane2" role="tabpanel" aria-labelledby="tab2" hidden>
     <div class="desc-note"><b>Ver 2 · 열차 실시간 운행 API</b><br>
-      내 폰의 위치가 아니라, "지금 이 노선의 열차들이 어느 역에 있는지"를 알려주는 공개 API를 폴링해요. 지하 여부와 무관하게 정확하다는 게 최대 장점. 여기서는 실제 API 대신 <b>모의 API 서버</b>를 붙여서 응답 형식과 흐름을 그대로 재현했어요. (실제 연동 시: 서울 열린데이터광장 실시간 위치정보, 인천교통공사 API — 키 발급 필요)</div>
+      서울시 실시간 도착정보를 중계 서버를 통해 조회합니다. 열차번호·도착 상태·내리는 문 방향을 사용하며, 문 방향 값이 없으면 GPS 판단을 유지합니다.</div>
     <div class="card">
       <div class="btn-row">
-        <button class="go-btn" id="m2_pollBtn" onclick="m2_togglePoll()">▶ 모의 API 폴링 시작</button>
+        <button class="go-btn" id="m2_pollBtn" onclick="m2_togglePoll()">▶ 실제 API 폴링 시작</button>
         <button class="alt-btn" onclick="m2_clearLog()">로그 지우기</button>
       </div>
-      <div class="mode-status" id="m2_status">폴링 주기: 2초 · 내가 탄 열차를 자동 매칭한다고 가정</div>
+      <div class="mode-status" id="m2_status">중계 서버 연결 전 · 5초 간격으로 조회합니다</div>
       <div class="api-log" id="m2_log">API 응답 로그가 여기에 표시돼요</div>
       <div class="route-strip" id="routeStrip2"></div>
     </div>
@@ -473,6 +474,7 @@
   </footer>
 </div>
 
+<script src="data/stations-seoul.js"></script>
 <script>
 /* ═══ 공용 데이터/유틸 ═══ */
 const INCHEON_LINE_1_STATIONS = [
@@ -542,9 +544,30 @@ const LINE_CATALOG = {
   EVER:{name:"용인 에버라인",badge:"에버",color:"#6FB245"}, U_LINE:{name:"의정부경전철",badge:"의정부",color:"#FDA600"},
   GTXA:{name:"GTX-A",badge:"GTX-A",color:"#9A6292"}
 };
+const SEOUL_SUBWAY_DATA=window.SEOUL_SUBWAY_DATA;
+const SEOUL_API_IDS={L1:"1001",L2:"1002",L3:"1003",L4:"1004",L5:"1005",L6:"1006",L7:"1007",L8:"1008",L9:"1009"};
+if (SEOUL_SUBWAY_DATA?.routes && SEOUL_SUBWAY_DATA?.stations){
+  for (let number=1;number<=9;number++){
+    const id="L"+number;
+    const routes=SEOUL_SUBWAY_DATA.routes[String(number)].map(route=>({
+      ...route,
+      stations:route.stationIds.map(stationId=>({...SEOUL_SUBWAY_DATA.stations[stationId]}))
+    }));
+    Object.assign(LINE_CATALOG[id],{
+      supported:true,
+      apiSupported:true,
+      apiSubwayId:SEOUL_API_IDS[id],
+      routes,
+      stations:routes[0].stations,
+      doors:{}
+    });
+  }
+}
 let activeLineId="ICN1";
 let STATIONS=INCHEON_LINE_1_STATIONS;
 let DOOR_DIRECTIONS=INCHEON_LINE_1_DOORS;
+let activeRoute=null;
+let LIVE_DOOR_DIRECTIONS={};
 const activeLine=()=>LINE_CATALOG[activeLineId];
 const $ = id => document.getElementById(id);
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
@@ -565,7 +588,35 @@ function nearestStation(lat,lng){
   return {idx:best,dist:bestDist};
 }
 const clampIdx=i=>Math.max(0,Math.min(STATIONS.length-1,i));
-const neighborIdx=(idx,d)=>clampIdx(idx+(d==="down"?1:-1));
+function neighborIdx(idx,d){
+  const step=d==="down"?1:-1;
+  if (activeRoute?.circular) return (idx+step+STATIONS.length)%STATIONS.length;
+  return clampIdx(idx+step);
+}
+const plainStationName=name=>String(name||"")
+  .replace(/\([^)]*\)/g,"").replace(/역$/g,"").replace(/[·.\s]/g,"").trim();
+const stationLabel=name=>String(name||"").endsWith("역")?String(name):String(name||"")+"역";
+function findStationIndexByName(name){
+  const wanted=plainStationName(name);
+  if (!wanted) return -1;
+  return STATIONS.findIndex(station=>{
+    const candidate=plainStationName(station.name);
+    return candidate===wanted || candidate.includes(wanted) || wanted.includes(candidate);
+  });
+}
+function directionText(){
+  if (activeRoute?.circular) return dir==="down"?"내선":"외선";
+  return (dir==="down"?STATIONS.at(-1):STATIONS[0])?.name+" 방면";
+}
+function updateDirectionButtons(){
+  if (activeRoute?.circular){
+    $("dirDown").textContent="내선 방향 ↓";
+    $("dirUp").textContent="외선 방향 ↑";
+  } else {
+    $("dirDown").textContent=(STATIONS.at(-1)?.name||"정방향")+" 방면 ↓";
+    $("dirUp").textContent=(STATIONS[0]?.name||"역방향")+" 방면 ↑";
+  }
+}
 // 역간 평균 소요시간(초): 거리 / 40km/h (Ver3 추정용)
 function segRunSec(a,b){ return Math.round(haversine(STATIONS[a].lat,STATIONS[a].lng,STATIONS[b].lat,STATIONS[b].lng)/11.1); }
 const ALIGN_THRESHOLD=45, CONFIRM_TICKS=3, MOVE_SPEED=15, STOP_SPEED=5;
@@ -608,20 +659,23 @@ function selectLine(id){
   activeLineId=id;
   const line=activeLine();
   stopAll();
+  activeRoute=line.routes?.[0]||null;
   STATIONS=line.stations||INCHEON_LINE_1_STATIONS;
   DOOR_DIRECTIONS=line.doors||{};
-  curIdx=10; nextIdx=11; dir="down"; dirLocked=false; lastFix=null; state="IDLE";
+  curIdx=Math.min(10,STATIONS.length-1); nextIdx=neighborIdx(curIdx,"down"); dir="down"; dirLocked=false; lastFix=null; state="IDLE";
   calibratedFrontHeading=null; currentDoorSide=null; doorBearing=null;
+  LIVE_DOOR_DIRECTIONS={};
+  if (typeof resetApiTracking==="function") resetApiTracking();
   $("lineSelect").value=id;
   $("lineBadge").textContent=line.badge;
   $("lineBadge").style.background=line.color;
-  $("lineSupport").textContent=line.supported?"베타 지원":"검증 준비 중";
+  $("lineSupport").textContent=line.apiSupported?"API·좌표 지원":(line.supported?"베타 지원":"검증 준비 중");
   $("lineSupport").classList.toggle("pending",!line.supported);
   ["autoTrackBtn","calibrateBtn","dirDown","dirUp"].forEach(controlId=>$(controlId).disabled=!line.supported);
   $("advancedTests").querySelectorAll("button").forEach(btn=>btn.disabled=!line.supported);
   if ($("m3_signalBtn")) $("m3_signalBtn").disabled=true;
   if (!line.supported){ renderUnsupportedLine(); return; }
-  $("dirDown").textContent="송도 방면 ↓"; $("dirUp").textContent="계양 방면 ↑";
+  updateDirectionButtons();
   $("dirDown").classList.add("active"); $("dirUp").classList.remove("active");
   setSource("","자동 추적 대기");
   computeDoor();
@@ -663,15 +717,20 @@ function computeDoor(){
     renderRoute();
     return;
   }
-  const approachFrom = movingLike ? from : STATIONS[neighborIdx(curIdx, dir==="down"?"up":"down")];
-  const trainBearing = bearingBetween(approachFrom, target);
-  const side = DOOR_DIRECTIONS[target.name]?.[dir];
+  const previousIdx=neighborIdx(curIdx, dir==="down"?"up":"down");
+  const trainBearing=movingLike
+    ? bearingBetween(from,to)
+    : (previousIdx!==curIdx
+        ? bearingBetween(STATIONS[previousIdx],target)
+        : bearingBetween(from,to));
+  const side = LIVE_DOOR_DIRECTIONS[plainStationName(target.name)]?.[dir]
+    || DOOR_DIRECTIONS[target.name]?.[dir];
   if (!side){
     currentDoorSide=null; doorBearing=null;
     $("doorHero").className="door-hero checking";
     $("heroState").textContent="확인이 필요합니다";
-    $("heroDirection").textContent=target.name+"역";
-    $("heroStation").textContent="문 방향 데이터 확인 필요 · "+(dir==="down"?"송도":"계양")+" 방면";
+    $("heroDirection").textContent=stationLabel(target.name);
+    $("heroStation").textContent="문 방향 데이터 확인 필요 · "+directionText();
     $("leftDoorMark").classList.remove("active");
     $("rightDoorMark").classList.remove("active");
     $("heroArrowWrap").style.transform="rotate(0deg)";
@@ -687,14 +746,14 @@ function computeDoor(){
     : (calibratedFrontHeading+(side==="left"?-90:90)+360)%360;
   $("sideText").textContent = side==="left"?"왼쪽":"오른쪽";
   $("subNote").textContent = movingLike
-    ? "다음 역 "+target.name+" · "+(dir==="down"?"송도":"계양")+" 방면 기준"
-    : target.name+"역 · "+(dir==="down"?"송도":"계양")+" 방면 기준";
+    ? "다음 역 "+target.name+" · "+directionText()+" 기준"
+    : target.name+"역 · "+directionText()+" 기준";
   const estimated = state==="ESTIMATING" || $("sourceChip").classList.contains("est");
   const headingReady=compassStarted && lastHeading!==null;
   $("doorHero").className="door-hero has-direction"+(estimated?" estimated":"")+(state==="AT_STATION"?" arrived":"")+(!sensorReliable?" sensor-warning":"");
   $("heroState").textContent=!sensorReliable?"방향 센서 보정 필요":(!headingReady?"방향 센서 연결 중":(estimated?"위치 추정 중":"실제 문 방향 안내"));
-  $("heroDirection").textContent=target.name+"역";
-  $("heroStation").textContent=(movingLike?"다음 역":"현재 역")+" · "+(dir==="down"?"송도":"계양")+" 방면";
+  $("heroDirection").textContent=stationLabel(target.name);
+  $("heroStation").textContent=(movingLike?"다음 역":"현재 역")+" · "+directionText();
   $("heroSideText").textContent=headingReady
     ? (side==="left"?"왼쪽":"오른쪽")+" 문 · 화살표를 따라 이동하세요"
     : "열차 진행 기준 "+(side==="left"?"왼쪽":"오른쪽")+" 문";
@@ -842,7 +901,7 @@ function stopAll(){
   if (m3_estTimer){ clearInterval(m3_estTimer); m3_estTimer=null; }
   $("m1_realBtn").textContent="▶ 실제 네트워크 측위"; $("m1_realBtn").classList.remove("stop");
   $("m1_simBtn").textContent="🎬 시뮬레이션 (오차 포함)";
-  $("m2_pollBtn").textContent="▶ 모의 API 폴링 시작"; $("m2_pollBtn").classList.remove("stop");
+  $("m2_pollBtn").textContent="▶ 실제 API 폴링 시작"; $("m2_pollBtn").classList.remove("stop");
   $("m3_realBtn").textContent="▶ 실제 GPS 추적"; $("m3_realBtn").classList.remove("stop");
   $("m3_simBtn").textContent="🎬 시뮬레이션 체험";
   $("m3_signalBtn").disabled=true; m3_signalLost=false;
@@ -897,8 +956,8 @@ function m1_toggleSim(){
   btn.textContent="⏹ 시뮬레이션 중지";
   state="IDLE"; lastFix=null; dirLocked=false;
   setSource("net","📶 네트워크 측위 (모의)");
-  let i=STATIONS.findIndex(s=>s.name==="부평");
-  const endIdx=STATIONS.findIndex(s=>s.name==="인천시청");
+  let i=Math.min(1,STATIONS.length-1);
+  const endIdx=Math.min(i+4,STATIONS.length-1);
   let phase="stop", t=0, prog=0;
   const NOISE=0.0013; // 약 ±140m 오차
   m1_simTimer=setInterval(()=>{
@@ -914,61 +973,139 @@ function m1_toggleSim(){
       processFix(a.lat+(b.lat-a.lat)*prog+nLat, a.lng+(b.lng-a.lng)*prog+nLng,
                  prog>=1?3:(prog<0.15||prog>0.85?20+Math.random()*10:45+Math.random()*15));
       if (prog>=1){ i++; phase="stop"; t=0; }
-    } else { stopAll(); $("m1_status").textContent="시뮬레이션 종료 · 인천시청 도착"; }
+    } else { stopAll(); $("m1_status").textContent="시뮬레이션 종료 · "+STATIONS[endIdx].name+" 도착"; }
   },700);
 }
 
-/* ═══ VER 2: 열차 실시간 운행 API (모의 서버) ═══ */
-let m2_pollTimer=null;
-// 모의 API 서버: 실제 서버라면 이 부분이 fetch()가 됨
-const mockServer = {
-  trainNo:"1023", i:10, phase:"stop", t:0, prog:0, endIdx:14,
-  tick(){
-    if (this.phase==="stop"){
-      if (++this.t>3){ this.t=0; this.phase=(this.i>=this.endIdx)?"done":"run"; this.prog=0; }
-    } else if (this.phase==="run"){
-      this.prog=Math.min(1,this.prog+0.25);
-      if (this.prog>=1){ this.i++; this.phase="stop"; this.t=0; }
+/* ═══ VER 2: 서울시 실시간 도착정보 API ═══ */
+const API_POLL_MS=5000;
+const apiBaseUrl=()=>String(window.SUBWAY_API_BASE_URL||"").replace(/\/$/,"");
+let m2_pollTimer=null, m2_pollInFlight=false, trackedTrainNo=null;
+
+function resetApiTracking(){
+  trackedTrainNo=null;
+  m2_pollInFlight=false;
+}
+function parseDoorSide(value){
+  const text=String(value||"").trim().toLowerCase();
+  if (text.includes("왼")||text==="left"||text==="l") return "left";
+  if (text.includes("오른")||text==="right"||text==="r") return "right";
+  return null;
+}
+function arrivalRows(payload){
+  return payload?.realtimeArrivalList || payload?.data?.realtimeArrivalList || [];
+}
+function routeMatchForArrival(row,stationName){
+  const routes=activeLine().routes||[];
+  for (const route of routes){
+    const queryIdx=route.stations.findIndex(s=>plainStationName(s.name)===plainStationName(stationName));
+    const destinationIdx=route.stations.findIndex(s=>plainStationName(s.name)===plainStationName(row.bstatnNm));
+    const viaName=String(row.trainLineNm||"").match(/-\s*(.+?)방면/)?.[1]?.trim();
+    const viaIdx=route.stations.findIndex(s=>plainStationName(s.name)===plainStationName(viaName));
+    if (queryIdx<0) continue;
+    if (route.circular){
+      const apiDirection=String(row.updnLine||"");
+      const apiDir=apiDirection.includes("내선")?"down":(apiDirection.includes("외선")?"up":null);
+      if (!apiDir || apiDir===dir) return {route,queryIdx,tripDir:apiDir||dir};
+    } else if (viaIdx>=0 || destinationIdx>=0){
+      const directionIdx=viaIdx>=0?viaIdx:destinationIdx;
+      const tripDir=directionIdx>queryIdx?"down":"up";
+      if (tripDir===dir) return {route,queryIdx,tripDir};
     }
-  },
-  response(){
-    return {
-      trainNo:this.trainNo,
-      updnLine: dir==="down"?"하행":"상행",
-      statnNm: STATIONS[this.i].name,
-      trainSttus: this.phase==="run"?"1":"0", // 0:정차(도착) 1:이동(출발)
-      nextStatnNm: STATIONS[clampIdx(this.i+1)].name,
-      recptnDt: new Date().toTimeString().slice(0,8)
-    };
   }
-};
-/* 실제 연동 예시 (참고용):
-   fetch("http://swopenapi.seoul.go.kr/api/subway/{KEY}/json/realtimePosition/0/50/1호선")
-   → 응답의 statnNm(현재역), trainSttus(0진입/1도착/2출발) 등을 아래와 동일하게 매핑 */
+  return null;
+}
+function chooseArrival(rows,stationName){
+  const sameLine=rows.filter(row=>String(row.subwayId)===String(activeLine().apiSubwayId));
+  if (trackedTrainNo){
+    const tracked=sameLine.find(row=>String(row.btrainNo)===String(trackedTrainNo));
+    const trackedMatch=tracked&&routeMatchForArrival(tracked,stationName);
+    if (trackedMatch) return {row:tracked,match:trackedMatch};
+  }
+  const candidates=sameLine
+    .map(row=>({row,match:routeMatchForArrival(row,stationName)}))
+    .filter(candidate=>candidate.match)
+    .sort((a,b)=>(Number(a.row.barvlDt)||999999)-(Number(b.row.barvlDt)||999999));
+  return candidates[0]||null;
+}
+function applyApiRoute(match){
+  if (!match?.route) return;
+  if (activeRoute?.id!==match.route.id){
+    activeRoute=match.route;
+    STATIONS=activeRoute.stations;
+    updateDirectionButtons();
+  }
+  dir=match.tripDir||dir;
+  $("dirDown").classList.toggle("active",dir==="down");
+  $("dirUp").classList.toggle("active",dir==="up");
+}
+function applyArrival(row,match,stationName){
+  applyApiRoute(match);
+  const stationIdx=findStationIndexByName(stationName);
+  if (stationIdx<0) return;
+  const apiDoor=parseDoorSide(row.subwayHeading);
+  if (apiDoor){
+    const key=plainStationName(STATIONS[stationIdx].name);
+    LIVE_DOOR_DIRECTIONS[key] ||= {};
+    LIVE_DOOR_DIRECTIONS[key][dir]=apiDoor;
+  }
+  const arrivalCode=String(row.arvlCd??"");
+  if (!trackedTrainNo && (arrivalCode==="1"||arrivalCode==="2")) trackedTrainNo=String(row.btrainNo||"")||null;
+  if (arrivalCode==="1"){
+    $("speedNum").textContent="0";
+    bannerAtStation(stationIdx,"API 도착 확인 · 열차 "+(row.btrainNo||"번호 미상"));
+  } else if (arrivalCode==="2"){
+    $("speedNum").textContent="40";
+    curIdx=stationIdx;
+    bannerMoving("API 출발 확인 · 열차 "+(row.btrainNo||"번호 미상"));
+  } else {
+    $("m2_status").textContent="열차 "+(row.btrainNo||"번호 미상")+" · "+(row.arvlMsg2||"접근 정보 확인 중");
+    computeDoor();
+  }
+  m2_log(JSON.stringify({trainNo:row.btrainNo,station:row.statnNm,direction:row.updnLine,arrivalCode:row.arvlCd,door:row.subwayHeading,receivedAt:row.recptnDt}));
+}
+async function m2_pollOnce(){
+  if (m2_pollInFlight) return;
+  if (!activeLine().apiSupported){
+    $("m2_status").textContent="선택한 노선은 서울시 API 지원 대상이 아닙니다.";
+    return;
+  }
+  const baseUrl=apiBaseUrl();
+  if (!baseUrl){
+    $("m2_status").textContent="중계 서버 주소가 없습니다. 4단계 서버 연결 후 사용할 수 있습니다.";
+    return;
+  }
+  m2_pollInFlight=true;
+  const station=state==="MOVING"||state==="ESTIMATING" ? STATIONS[nextIdx] : STATIONS[curIdx];
+  try{
+    const url=baseUrl+"/api/subway/arrivals?station="+encodeURIComponent(plainStationName(station.name));
+    const response=await fetch(url,{headers:{Accept:"application/json"},cache:"no-store"});
+    if (!response.ok) throw new Error("HTTP "+response.status);
+    const payload=await response.json();
+    const selected=chooseArrival(arrivalRows(payload),station.name);
+    if (!selected){
+      $("m2_status").textContent=stationLabel(station.name)+" · 현재 방면 열차를 찾는 중";
+      return;
+    }
+    applyArrival(selected.row,selected.match,station.name);
+    setSource("api","🛜 서울시 실시간 API");
+  }catch(error){
+    $("m2_status").textContent="API 연결 실패 · "+error.message;
+    setSource("","API 연결 실패");
+  }finally{
+    m2_pollInFlight=false;
+  }
+}
 function m2_togglePoll(){
   const btn=$("m2_pollBtn");
   if (m2_pollTimer){ stopAll(); $("m2_status").textContent="폴링을 멈췄어요."; return; }
   stopAll();
+  if (!activeLine().apiSupported){ $("m2_status").textContent="서울 1~9호선을 선택해주세요."; return; }
   btn.textContent="⏹ 폴링 중지"; btn.classList.add("stop");
-  state="IDLE"; setSource("api","🛜 열차 API");
-  mockServer.i=10; mockServer.phase="stop"; mockServer.t=0; mockServer.prog=0;
-  $("m2_status").textContent="폴링 주기: 2초 · 열차 "+mockServer.trainNo+"호에 탑승했다고 가정";
-  m2_pollTimer=setInterval(()=>{
-    mockServer.tick();
-    const res=mockServer.response();
-    m2_log(JSON.stringify(res));
-    // API 응답 → 상태 머신 반영 (내 위치 대신 열차 위치를 신뢰)
-    const idx=STATIONS.findIndex(s=>s.name===res.statnNm);
-    if (idx<0) return;
-    $("speedNum").textContent = res.trainSttus==="1" ? "40" : "0";
-    if (res.trainSttus==="1"){
-      curIdx=idx;
-      if (state!=="MOVING") bannerMoving("API 기준 · "+res.nextStatnNm+" 접근 중");
-    } else {
-      if (state!=="AT_STATION"||curIdx!==idx) bannerAtStation(idx,"API 기준 도착 확인 ("+res.recptnDt+")");
-    }
-    if (mockServer.phase==="done"){ stopAll(); $("m2_status").textContent="모의 운행 종료 · 인천시청 도착"; }
-  },2000);
+  resetApiTracking();
+  $("m2_status").textContent="서울시 실시간 도착정보 연결 중";
+  m2_pollOnce();
+  m2_pollTimer=setInterval(m2_pollOnce,API_POLL_MS);
 }
 function m2_log(line){
   const el=$("m2_log");
@@ -1068,8 +1205,8 @@ function m3_toggleSim(){
   setSource("gps","📡 GPS 실측 (모의)");
   $("m3_status").textContent="달리는 도중 📡 버튼을 눌러 터널 진입(신호 끊김)을 재현해보세요";
   m3_startWatchdog();
-  let i=STATIONS.findIndex(s=>s.name==="부평");
-  const endIdx=STATIONS.findIndex(s=>s.name==="송도달빛축제공원");
+  let i=Math.min(1,STATIONS.length-1);
+  const endIdx=Math.min(i+5,STATIONS.length-1);
   let phase="stop", t=0, prog=0;
   m3_simTimer=setInterval(()=>{
     const a=STATIONS[i], b=STATIONS[clampIdx(i+1)];
