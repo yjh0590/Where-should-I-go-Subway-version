@@ -631,6 +631,88 @@ let calibratedFrontHeading=null, currentDoorSide=null, compassStarted=false;
 let moveTicks=0, stopTicks=0, lastFix=null;
 let stationRadius=600;      // 모드별로 조정 (초기 모드는 Ver 1)
 let autoTracking=false;
+let gpsFixHistory=[], lastTrackMatch=null, lastReliableKmh=0;
+let lastGpsSuccessAt=0, lastApiSuccessAt=0, lastApiMatchAt=0, lastApiDoorAt=0, lastApiDoorKey="";
+let autoCoordinatorTimer=null;
+const GPS_FRESH_MS=8000, API_DOOR_FRESH_MS=15000, MAX_TRACK_OFFSET=250;
+
+function resetFusionState(){
+  gpsFixHistory=[]; lastTrackMatch=null; lastReliableKmh=0;
+  lastGpsSuccessAt=0; lastApiSuccessAt=0; lastApiMatchAt=0; lastApiDoorAt=0; lastApiDoorKey="";
+}
+function freshGps(now=Date.now()){ return lastGpsSuccessAt>0 && now-lastGpsSuccessAt<=GPS_FRESH_MS; }
+function freshApiDoor(now=Date.now()){
+  const targetIdx=(state==="MOVING"||state==="ESTIMATING")?nextIdx:curIdx;
+  const targetKey=plainStationName(STATIONS[targetIdx]?.name);
+  return lastApiDoorKey===targetKey && lastApiDoorAt>0 && now-lastApiDoorAt<=API_DOOR_FRESH_MS;
+}
+
+function projectPointToSegment(lat,lng,a,b){
+  const meanLat=toRad((a.lat+b.lat+lat)/3);
+  const mx=111320*Math.cos(meanLat), my=110540;
+  const px=(lng-a.lng)*mx, py=(lat-a.lat)*my;
+  const vx=(b.lng-a.lng)*mx, vy=(b.lat-a.lat)*my;
+  const len2=vx*vx+vy*vy;
+  const t=len2?Math.max(0,Math.min(1,(px*vx+py*vy)/len2)):0;
+  const x=vx*t, y=vy*t;
+  return {
+    t,
+    lat:a.lat+(b.lat-a.lat)*t,
+    lng:a.lng+(b.lng-a.lng)*t,
+    distance:Math.hypot(px-x,py-y),
+    segmentLength:Math.sqrt(len2)
+  };
+}
+function projectToRoute(lat,lng){
+  let best=null;
+  const count=activeRoute?.circular?STATIONS.length:STATIONS.length-1;
+  for(let i=0;i<count;i++){
+    const j=(i+1)%STATIONS.length;
+    const projected=projectPointToSegment(lat,lng,STATIONS[i],STATIONS[j]);
+    if(!best||projected.distance<best.distance) best={...projected,fromIdx:i,toIdx:j,progress:i+projected.t};
+  }
+  return best;
+}
+function routeProgressDelta(previous,current){
+  let delta=current-previous;
+  if(activeRoute?.circular){
+    const half=STATIONS.length/2;
+    if(delta>half) delta-=STATIONS.length;
+    if(delta<-half) delta+=STATIONS.length;
+  }
+  return delta;
+}
+function acceptGpsOnTrack(lat,lng,accuracy,reportedKmh,timestamp){
+  const match=projectToRoute(lat,lng);
+  if(!match||match.distance>Math.max(MAX_TRACK_OFFSET,accuracy*2)) return null;
+  const previous=gpsFixHistory.at(-1);
+  const sample={...match,rawLat:lat,rawLng:lng,t:timestamp};
+  gpsFixHistory.push(sample);
+  gpsFixHistory=gpsFixHistory.filter(f=>timestamp-f.t<=20000).slice(-6);
+  let calculatedKmh=Number.isFinite(reportedKmh)?reportedKmh:null;
+  if(previous){
+    const dt=(timestamp-previous.t)/1000;
+    if(dt>0){
+      const delta=routeProgressDelta(previous.progress,match.progress);
+      const routeMeters=Math.abs(delta)*((previous.segmentLength+match.segmentLength)/2);
+      const derivedKmh=routeMeters/dt*3.6;
+      if(calculatedKmh===null||calculatedKmh<1) calculatedKmh=derivedKmh;
+    }
+  }
+  calculatedKmh=Math.max(0,Math.min(120,calculatedKmh||0));
+  if(calculatedKmh>=5) lastReliableKmh=calculatedKmh;
+  if(gpsFixHistory.length>=3){
+    let trend=0;
+    for(let i=1;i<gpsFixHistory.length;i++) trend+=routeProgressDelta(gpsFixHistory[i-1].progress,gpsFixHistory[i].progress);
+    if(Math.abs(trend)>=0.08){
+      dirLocked=true;
+      setDir(trend>0?"down":"up",false);
+      $("dirNote").textContent="✓ 여러 GPS 위치를 선로에 대조해 방향 판별";
+    }
+  }
+  lastTrackMatch=sample;
+  return {...sample,kmh:calculatedKmh};
+}
 
 function renderUnsupportedLine(){
   const line=activeLine();
@@ -775,7 +857,7 @@ function setAutoButton(active){
 }
 function autoToggle(){
   if (!activeLine().supported){ renderUnsupportedLine(); return; }
-  if (autoTracking || m3_watchId!==null){
+  if (autoTracking){
     stopAll();
     state="IDLE"; lastFix=null;
     setSource("","자동 추적 대기");
@@ -784,8 +866,7 @@ function autoToggle(){
   }
   startCompass();
   switchMode(3);
-  m3_toggleReal();
-  setAutoButton(m3_watchId!==null);
+  startUnifiedAuto();
   computeDoor();
 }
 
@@ -872,10 +953,18 @@ function autoDetectDir(lat,lng){
   setDir(gainDown>gainUp?"down":"up", false);
   $("dirNote").textContent="✓ 이동 방향으로 자동 판별됨";
 }
-function processFix(lat,lng,kmh){
+function processFix(lat,lng,kmh,trackMatch=null){
   $("speedNum").textContent=Math.round(kmh);
   const near=nearestStation(lat,lng);
-  if (state==="IDLE"){ bannerAtStation(near.idx,"약 "+Math.round(near.dist)+"m 거리에서 감지"); }
+  if (state==="IDLE"){
+    if(trackMatch&&kmh>=MOVE_SPEED){
+      curIdx=dir==="down"?trackMatch.fromIdx:trackMatch.toIdx;
+      nextIdx=neighborIdx(curIdx,dir);
+      bannerMoving("여러 GPS 위치를 선로에 대조해 현재 구간 확인");
+    } else {
+      bannerAtStation(near.idx,"약 "+Math.round(near.dist)+"m 거리에서 감지");
+    }
+  }
   else if (state==="AT_STATION"){
     if (kmh>=MOVE_SPEED) moveTicks++; else moveTicks=0;
     if (moveTicks>=CONFIRM_TICKS){ moveTicks=0; autoDetectDir(lat,lng); bannerMoving(); }
@@ -899,6 +988,7 @@ function stopAll(){
   if (m3_simTimer){ clearInterval(m3_simTimer); m3_simTimer=null; }
   if (m3_watchdog){ clearInterval(m3_watchdog); m3_watchdog=null; }
   if (m3_estTimer){ clearInterval(m3_estTimer); m3_estTimer=null; }
+  if (autoCoordinatorTimer){ clearInterval(autoCoordinatorTimer); autoCoordinatorTimer=null; }
   $("m1_realBtn").textContent="▶ 실제 네트워크 측위"; $("m1_realBtn").classList.remove("stop");
   $("m1_simBtn").textContent="🎬 시뮬레이션 (오차 포함)";
   $("m2_pollBtn").textContent="▶ 실제 API 폴링 시작"; $("m2_pollBtn").classList.remove("stop");
@@ -906,6 +996,7 @@ function stopAll(){
   $("m3_simBtn").textContent="🎬 시뮬레이션 체험";
   $("m3_signalBtn").disabled=true; m3_signalLost=false;
   $("m3_signalBtn").textContent="📡 신호 끊김 재현"; $("m3_eta").textContent="";
+  resetFusionState();
   setAutoButton(false);
 }
 function switchMode(n){
@@ -1031,11 +1122,15 @@ function chooseArrival(rows,stationName){
 function applyApiRoute(match){
   if (!match?.route) return;
   if (activeRoute?.id!==match.route.id){
+    const currentName=STATIONS[curIdx]?.name;
     activeRoute=match.route;
     STATIONS=activeRoute.stations;
+    const remapped=findStationIndexByName(currentName);
+    curIdx=remapped>=0?remapped:match.queryIdx;
     updateDirectionButtons();
   }
   dir=match.tripDir||dir;
+  nextIdx=neighborIdx(curIdx,dir);
   $("dirDown").classList.toggle("active",dir==="down");
   $("dirUp").classList.toggle("active",dir==="up");
 }
@@ -1043,18 +1138,23 @@ function applyArrival(row,match,stationName){
   applyApiRoute(match);
   const stationIdx=findStationIndexByName(stationName);
   if (stationIdx<0) return;
+  lastApiSuccessAt=Date.now();
+  lastApiMatchAt=Date.now();
   const apiDoor=parseDoorSide(row.subwayHeading);
   if (apiDoor){
     const key=plainStationName(STATIONS[stationIdx].name);
     LIVE_DOOR_DIRECTIONS[key] ||= {};
     LIVE_DOOR_DIRECTIONS[key][dir]=apiDoor;
+    lastApiDoorAt=Date.now();
+    lastApiDoorKey=key;
   }
   const arrivalCode=String(row.arvlCd??"");
   if (!trackedTrainNo && (arrivalCode==="1"||arrivalCode==="2")) trackedTrainNo=String(row.btrainNo||"")||null;
-  if (arrivalCode==="1"){
+  const gpsOwnsPosition=autoTracking&&freshGps();
+  if (!gpsOwnsPosition&&arrivalCode==="1"){
     $("speedNum").textContent="0";
     bannerAtStation(stationIdx,"API 도착 확인 · 열차 "+(row.btrainNo||"번호 미상"));
-  } else if (arrivalCode==="2"){
+  } else if (!gpsOwnsPosition&&arrivalCode==="2"){
     $("speedNum").textContent="40";
     curIdx=stationIdx;
     bannerMoving("API 출발 확인 · 열차 "+(row.btrainNo||"번호 미상"));
@@ -1062,6 +1162,7 @@ function applyArrival(row,match,stationName){
     $("m2_status").textContent="열차 "+(row.btrainNo||"번호 미상")+" · "+(row.arvlMsg2||"접근 정보 확인 중");
     computeDoor();
   }
+  if(autoTracking) refreshAutoSource();
   m2_log(JSON.stringify({trainNo:row.btrainNo,station:row.statnNm,direction:row.updnLine,arrivalCode:row.arvlCd,door:row.subwayHeading,receivedAt:row.recptnDt}));
 }
 async function m2_pollOnce(){
@@ -1072,9 +1173,10 @@ async function m2_pollOnce(){
   }
   const baseUrl=apiBaseUrl();
   if (!baseUrl){
-    $("m2_status").textContent="중계 서버 주소가 없습니다. 4단계 서버 연결 후 사용할 수 있습니다.";
+    if(!autoTracking) $("m2_status").textContent="중계 서버 주소가 없습니다. 4단계 서버 연결 후 사용할 수 있습니다.";
     return;
   }
+  if(autoTracking&&state==="IDLE"&&!lastFix) return;
   m2_pollInFlight=true;
   const station=state==="MOVING"||state==="ESTIMATING" ? STATIONS[nextIdx] : STATIONS[curIdx];
   try{
@@ -1082,16 +1184,18 @@ async function m2_pollOnce(){
     const response=await fetch(url,{headers:{Accept:"application/json"},cache:"no-store"});
     if (!response.ok) throw new Error("HTTP "+response.status);
     const payload=await response.json();
+    lastApiSuccessAt=Date.now();
     const selected=chooseArrival(arrivalRows(payload),station.name);
     if (!selected){
       $("m2_status").textContent=stationLabel(station.name)+" · 현재 방면 열차를 찾는 중";
       return;
     }
     applyArrival(selected.row,selected.match,station.name);
-    setSource("api","🛜 서울시 실시간 API");
+    if(!autoTracking) setSource("api","🛜 서울시 실시간 API");
   }catch(error){
     $("m2_status").textContent="API 연결 실패 · "+error.message;
-    setSource("","API 연결 실패");
+    if(autoTracking) refreshAutoSource();
+    else setSource("","API 연결 실패");
   }finally{
     m2_pollInFlight=false;
   }
@@ -1122,17 +1226,21 @@ const SIGNAL_TIMEOUT=6000; // ms
 function m3_startWatchdog(){
   m3_lastFixTime=Date.now();
   m3_watchdog=setInterval(()=>{
-    if (state==="MOVING" && Date.now()-m3_lastFixTime>SIGNAL_TIMEOUT && !m3_estTimer){
+    if(autoTracking){
+      refreshAutoSource();
+    } else if (state==="MOVING" && Date.now()-m3_lastFixTime>SIGNAL_TIMEOUT && !m3_estTimer){
       m3_enterEstimating();
     }
   },1000);
 }
 function m3_enterEstimating(){
-  // 마지막 위치에서 다음 역까지 남은 거리 → 평균 속도(40km/h)로 남은 시간 추정
+  // 마지막 선로 투영 위치와 최근 속도 → 다음 역까지 남은 시간 추정
   let remain=segRunSec(curIdx,nextIdx);
-  if (lastFix){
-    const d=haversine(lastFix.lat,lastFix.lng,STATIONS[nextIdx].lat,STATIONS[nextIdx].lng);
-    remain=Math.max(5, Math.round(d/11.1));
+  if (lastTrackMatch||lastFix){
+    const fix=lastTrackMatch||lastFix;
+    const d=haversine(fix.lat,fix.lng,STATIONS[nextIdx].lat,STATIONS[nextIdx].lng);
+    const speedMps=Math.max(6.9,Math.min(22.2,(lastReliableKmh||40)/3.6));
+    remain=Math.max(5,Math.round(d/speedMps));
   }
   m3_estRemain=remain;
   bannerEstimating(m3_estRemain);
@@ -1156,10 +1264,96 @@ function m3_enterEstimating(){
   },1000);
 }
 function m3_exitEstimating(msg){
+  const wasEstimating=state==="ESTIMATING";
   if (m3_estTimer){ clearInterval(m3_estTimer); m3_estTimer=null; }
   $("m3_eta").textContent="";
-  setSource("gps","📡 GPS 실측");
+  if(wasEstimating) bannerMoving(msg||"신호 복구 · 실측 위치로 보정됨");
+  if(autoTracking) refreshAutoSource();
+  else setSource("gps","📡 GPS 실측");
   if (msg) $("m3_status").textContent=msg;
+}
+function refreshAutoSource(){
+  if(!autoTracking) return;
+  const now=Date.now();
+  if(freshApiDoor(now)){
+    setSource("api","🛜 API 문 방향");
+    if(m3_estTimer) m3_exitEstimating("API 문 방향과 열차 상태로 복구됨");
+  } else if(freshGps(now)){
+    setSource("gps","📡 GPS 선로 교차계산");
+    if(m3_estTimer) m3_exitEstimating("GPS 신호 복구 · 선로 위치로 보정됨");
+  } else if(lastApiMatchAt&&now-lastApiMatchAt<=API_DOOR_FRESH_MS){
+    setSource("api","🛜 API 열차 상태 · 문 확인 중");
+  } else if(lastFix&&(state==="MOVING"||state==="ESTIMATING")){
+    if(!m3_estTimer) m3_enterEstimating();
+    else setSource("est","🛰️ 무신호 구간 추정");
+  } else {
+    setSource("","GPS 위치 확인 중");
+  }
+}
+function handleGpsPosition(pos){
+  const now=Date.now();
+  const age=now-(pos.timestamp||now);
+  const accuracy=Number(pos.coords.accuracy)||9999;
+  if(age>10000||accuracy>120){
+    $("m3_status").textContent=age>10000
+      ? "오래된 위치값 제외 · 새 GPS 신호를 기다리는 중"
+      : "GPS 정확도 ±"+Math.round(accuracy)+"m · 품질 기준 밖이라 제외";
+    if(autoTracking) refreshAutoSource();
+    return;
+  }
+  const {latitude,longitude,speed}=pos.coords;
+  const reportedKmh=typeof speed==="number"&&speed!==null&&!isNaN(speed)?speed*3.6:null;
+  const matched=acceptGpsOnTrack(latitude,longitude,accuracy,reportedKmh,now);
+  if(!matched){
+    $("m3_status").textContent="현재 위치가 선택 노선에서 너무 멀어 GPS 값을 제외했어요";
+    if(autoTracking) refreshAutoSource();
+    return;
+  }
+  lastGpsSuccessAt=now;
+  m3_lastFixTime=now;
+  if(state==="ESTIMATING") m3_exitEstimating("GPS 신호 복구 · 선로 위치로 보정됨");
+  $("m3_status").textContent="GPS 선로 교차계산 중 · 정확도 ±"+Math.round(accuracy)+"m · 선로 오차 "+Math.round(matched.distance)+"m";
+  processFix(matched.lat,matched.lng,matched.kmh,matched);
+  if(autoTracking) refreshAutoSource();
+}
+function handleGpsError(err){
+  $("m3_status").textContent=geoErrorMessage(err)+(lastFix?" · 가능한 경우 마지막 구간부터 추정합니다.":"");
+  if(err&&err.code===1&&!lastFix){
+    stopAll(); state="IDLE"; setSource("","위치 권한 필요"); computeDoor();
+  } else if(autoTracking){
+    refreshAutoSource();
+  }
+}
+function startGpsWatch(){
+  if(!navigator.geolocation) return false;
+  m3_startWatchdog();
+  m3_watchId=navigator.geolocation.watchPosition(handleGpsPosition,handleGpsError,
+    {enableHighAccuracy:true,maximumAge:0,timeout:15000});
+  return m3_watchId!==null;
+}
+function startUnifiedAuto(){
+  state="IDLE"; lastFix=null; moveTicks=0; stopTicks=0;
+  resetFusionState();
+  setAutoButton(true);
+  const gpsStarted=startGpsWatch();
+  const apiStarted=activeLine().apiSupported&&Boolean(apiBaseUrl());
+  if(apiStarted){
+    m2_pollOnce();
+    m2_pollTimer=setInterval(m2_pollOnce,API_POLL_MS);
+  }
+  if(!gpsStarted&&!apiStarted){
+    setAutoButton(false);
+    $("m3_status").textContent="GPS를 사용할 수 없고 API 중계 서버도 아직 연결되지 않았습니다.";
+    setSource("","추적 수단 없음");
+    return;
+  }
+  $("m3_realBtn").textContent="⏹ 자동 전환 추적 중";
+  $("m3_realBtn").classList.add("stop");
+  $("m3_status").textContent=apiStarted
+    ? "API 문 방향 → GPS 선로 계산 → 무신호 추정 순서로 자동 전환"
+    : "GPS 선로 계산 → 무신호 추정 사용 중 · API는 4단계 서버 연결 후 합류";
+  autoCoordinatorTimer=setInterval(refreshAutoSource,1000);
+  refreshAutoSource();
 }
 function m3_toggleReal(){
   const btn=$("m3_realBtn");
@@ -1167,33 +1361,10 @@ function m3_toggleReal(){
   stopAll();
   if (!navigator.geolocation){ $("m3_status").textContent="이 브라우저는 위치 정보를 지원하지 않아요."; return; }
   btn.textContent="⏹ 추적 중지"; btn.classList.add("stop");
-  $("m3_status").textContent="GPS 추적 중 · 6초간 신호가 없으면 자동으로 추정 모드로 전환돼요";
-  state="IDLE"; lastFix=null;
-  setSource("gps","📡 GPS 실측");
-  m3_startWatchdog();
-  m3_watchId=navigator.geolocation.watchPosition(pos=>{
-    const age=Date.now()-(pos.timestamp||Date.now());
-    const accuracy=Number(pos.coords.accuracy)||9999;
-    if (age>10000 || accuracy>120){
-      $("m3_status").textContent=age>10000
-        ? "오래된 위치값은 제외했어요. 새 GPS 신호를 기다리는 중입니다."
-        : "GPS 정확도가 낮아(±"+Math.round(accuracy)+"m) 제외했어요. 더 정확한 신호를 기다리는 중입니다.";
-      return;
-    }
-    m3_lastFixTime=Date.now();
-    m3_exitEstimating();
-    const {latitude,longitude,speed}=pos.coords;
-    let kmh;
-    if (typeof speed==="number"&&speed!==null&&!isNaN(speed)) kmh=speed*3.6;
-    else if (lastFix){ const dt=(Date.now()-lastFix.t)/1000; kmh=dt>0?haversine(lastFix.lat,lastFix.lng,latitude,longitude)/dt*3.6:0; }
-    else kmh=0;
-    $("m3_status").textContent="GPS 실측 중 · 정확도 ±"+Math.round(accuracy)+"m";
-    processFix(latitude,longitude,kmh);
-  }, err=>{
-    $("m3_status").textContent=geoErrorMessage(err)+(lastFix?" · 마지막 위치부터 추정 모드가 이어받아요.":"");
-    if (err && err.code===1){ stopAll(); state="IDLE"; lastFix=null; setSource("","위치 권한 필요"); computeDoor(); }
-  },
-  { enableHighAccuracy:true, maximumAge:0, timeout:15000 });
+  $("m3_status").textContent="GPS 선로 교차계산 중 · 6초 이상 신호가 없으면 추정으로 전환";
+  state="IDLE"; lastFix=null; resetFusionState();
+  setSource("gps","📡 GPS 선로 교차계산");
+  startGpsWatch();
 }
 function m3_toggleSim(){
   const btn=$("m3_simBtn");
@@ -1224,7 +1395,11 @@ function m3_toggleSim(){
     if (!m3_signalLost){
       m3_lastFixTime=Date.now();
       m3_exitEstimating();
-      processFix(lat,lng,kmh);
+      const matched=acceptGpsOnTrack(lat,lng,20,kmh,Date.now());
+      if(matched){
+        lastGpsSuccessAt=Date.now();
+        processFix(matched.lat,matched.lng,matched.kmh,matched);
+      }
     }
   },700);
 }
