@@ -1,5 +1,5 @@
 // 내리는 문 — 4단계 API 연결용 오프라인 캐시
-const CACHE = "naerineun-mun-step4-v1";
+const CACHE = "naerineun-mun-step4-v3";
 const APP_ASSETS = [
   "./",
   "./index.html",

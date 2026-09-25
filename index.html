@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -166,7 +165,7 @@
   .door-bg.open .door-seam{background:var(--green);opacity:1;box-shadow:0 0 22px 6px rgba(61,240,124,.55);}
   .ring{position:absolute;inset:0;border-radius:50%;border:1px solid var(--panel-edge);z-index:1;pointer-events:none;}
   .needle-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    transition:transform .12s linear;z-index:2;}
+    z-index:2;will-change:transform;}
   .arrow-svg{width:112px;height:112px;filter:drop-shadow(0 0 8px rgba(61,240,124,.5));transition:filter .2s;}
   .arrow-svg.misaligned{filter:drop-shadow(0 0 8px rgba(255,93,93,.45));}
   .arrow-fill{fill:var(--green);transition:fill .2s;}
@@ -206,7 +205,7 @@
   .hero-compass{position:relative;width:min(76vw,286px);aspect-ratio:1;margin:16px auto 12px;border-radius:50%;
     background:radial-gradient(circle,#fff 0 48%,#f4f8fe 49% 68%,#dce9fb 69% 70%,#fff 71%);
     border:1px solid #d7e2f0;box-shadow:inset 0 0 0 10px rgba(255,255,255,.72),0 14px 34px rgba(39,110,241,.12);}
-  .hero-compass-dial{position:absolute;inset:0;border-radius:50%;transition:transform .16s linear;z-index:1;}
+  .hero-compass-dial{position:absolute;inset:0;border-radius:50%;z-index:1;will-change:transform;}
   .compass-ticks{position:absolute;inset:7px;border-radius:50%;
     background:repeating-conic-gradient(from -0.5deg,#8d9bb0 0 1deg,transparent 1deg 5deg);
     -webkit-mask:radial-gradient(circle,transparent 0 74%,#000 74.5% 100%);mask:radial-gradient(circle,transparent 0 74%,#000 74.5% 100%);}
@@ -220,7 +219,7 @@
   .north-index{position:absolute;left:50%;top:-2px;transform:translateX(-50%);width:0;height:0;z-index:5;
     border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid var(--red);}
   .hero-arrow-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    transition:transform .16s linear,opacity .2s;opacity:.35;z-index:3;}
+    transition:opacity .2s;opacity:0;z-index:3;will-change:transform;}
   .door-hero.has-direction .hero-arrow-wrap{opacity:1;}
   .hero-arrow-svg{width:128px;height:128px;filter:drop-shadow(0 10px 14px rgba(39,110,241,.2));}
   .hero-arrow-fill{fill:#aeb9c9;transition:fill .2s;}
@@ -236,7 +235,7 @@
   .hero-actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:14px;}
   .auto-track{background:var(--blue);color:#fff;box-shadow:0 8px 22px rgba(39,110,241,.22);}
   .calibrate-btn{width:100%;border:1px solid #b8c9e3;background:#fff;color:#315078;border-radius:14px;padding:13px 12px;
-    font:800 14px/1.35 inherit;cursor:pointer;}
+    font:800 14px/1.35 inherit;text-align:center;}
   .calibrate-btn.ready{border-color:var(--green);color:var(--green);background:#f2fbf7;}
   .hero-help{font-size:12px;color:#69758a;}
   details.fold>summary,.card{background:#fff;color:var(--text);}
@@ -312,7 +311,7 @@
     </div>
     <div class="hero-direction" id="heroDirection">현재 역 확인 중</div>
     <div class="hero-station" id="heroStation">인천 1호선 · 위치 확인 전</div>
-    <div class="hero-compass" id="heroCompass" aria-label="실제 하차문 방향 나침반">
+    <div class="hero-compass" id="heroCompass" aria-label="추정 하차문 방향 나침반">
       <div class="north-index" aria-hidden="true"></div>
       <div class="hero-compass-dial" id="heroCompassDial" aria-hidden="true">
         <div class="compass-ticks"></div><div class="compass-major-ticks"></div>
@@ -331,7 +330,7 @@
     <div class="hero-side-text" id="heroSideText">방향 센서 대기 중</div>
     <div class="hero-actions">
       <button type="button" class="auto-track" id="autoTrackBtn" onclick="autoToggle()">▶ 자동 추적 시작</button>
-      <button type="button" class="calibrate-btn" id="calibrateBtn" onclick="calibrateTrainFront()">휴대폰 위쪽을 열차 앞쪽으로 향한 뒤 누르기</button>
+      <div class="calibrate-btn" id="tiltStatus" role="status">휴대폰을 수평에 가깝게 두면 방향을 확인합니다</div>
     </div>
     <div class="hero-help" id="heroHelp">버튼을 누르면 위치와 방향 센서를 함께 켭니다.</div>
     <div id="leftDoorMark" hidden></div><div id="rightDoorMark" hidden></div>
@@ -452,7 +451,7 @@
     <button class="start-btn" id="startBtn" onclick="startCompass()">🧭 나침반 켜기</button>
     <div class="manual-row" id="manualRow" style="display:none;">
       <span class="label">센서 없는 환경용 방향 시뮬레이션</span>
-      <input type="range" min="0" max="359" value="0" oninput="onHeading(+this.value)">
+      <input type="range" min="0" max="359" value="0" oninput="onHeading(+this.value,true)">
       <div class="manual-label"><span>내가 보는 방향 (0=북쪽)</span><span id="manualVal">0°</span></div>
     </div>
     </div></div>
@@ -628,7 +627,9 @@ let dir="down", dirLocked=false;
 let state="IDLE";           // IDLE | AT_STATION | MOVING | ESTIMATING
 let curIdx=10, nextIdx=11;
 let doorBearing=null, lastHeading=null, sensorReliable=true;
-let calibratedFrontHeading=null, currentDoorSide=null, compassStarted=false;
+let currentDoorSide=null, compassStarted=false;
+let continuousHeading=null, displayHeading=null, headingUpdatedAt=0, frameTime=0, arrowRotation=0;
+let compassFrame=null, pointerWasReady=false, sensorReason="방향 센서 연결 중", tiltReady=false, manualSimulation=false;
 let moveTicks=0, stopTicks=0, lastFix=null;
 let stationRadius=600;      // 모드별로 조정 (초기 모드는 Ver 1)
 let autoTracking=false;
@@ -724,6 +725,8 @@ function renderUnsupportedLine(){
   $("heroStation").textContent="수도권 노선 · 공식 데이터 검증 전";
   $("heroSource").textContent="추적 사용 불가";
   $("heroArrowWrap").style.transform="rotate(0deg)";
+  $("needleWrap").style.transform="rotate(0deg)";
+  arrowRotation=0;
   $("heroSideText").textContent="이 노선은 아직 문 방향 검증 전입니다";
   $("heroHelp").textContent="검증되지 않은 방향은 표시하지 않습니다.";
   $("statusBanner").className="status-banner";
@@ -746,7 +749,7 @@ function selectLine(id){
   STATIONS=line.stations||INCHEON_LINE_1_STATIONS;
   DOOR_DIRECTIONS=line.doors||{};
   curIdx=Math.min(10,STATIONS.length-1); nextIdx=neighborIdx(curIdx,"down"); dir="down"; dirLocked=false; lastFix=null; state="IDLE";
-  calibratedFrontHeading=null; currentDoorSide=null; doorBearing=null;
+  currentDoorSide=null; doorBearing=null;
   LIVE_DOOR_DIRECTIONS={};
   if (typeof resetApiTracking==="function") resetApiTracking();
   $("lineSelect").value=id;
@@ -754,7 +757,7 @@ function selectLine(id){
   $("lineBadge").style.background=line.color;
   $("lineSupport").textContent=line.apiSupported?"API·좌표 지원":(line.supported?"베타 지원":"검증 준비 중");
   $("lineSupport").classList.toggle("pending",!line.supported);
-  ["autoTrackBtn","calibrateBtn","dirDown","dirUp"].forEach(controlId=>$(controlId).disabled=!line.supported);
+  ["autoTrackBtn","dirDown","dirUp"].forEach(controlId=>$(controlId).disabled=!line.supported);
   $("advancedTests").querySelectorAll("button").forEach(btn=>btn.disabled=!line.supported);
   if ($("m3_signalBtn")) $("m3_signalBtn").disabled=true;
   if (!line.supported){ renderUnsupportedLine(); return; }
@@ -793,8 +796,10 @@ function computeDoor(){
     $("leftDoorMark").classList.remove("active");
     $("rightDoorMark").classList.remove("active");
     $("heroArrowWrap").style.transform="rotate(0deg)";
+    $("needleWrap").style.transform="rotate(0deg)";
+    arrowRotation=0;
     $("heroSideText").textContent=compassStarted?"방향 센서 연결됨":"방향 센서 대기 중";
-    $("heroHelp").textContent=autoTracking?"위치가 확인되면 화살표가 실제 문 쪽을 가리킵니다.":"버튼을 누르면 위치와 방향 센서를 함께 켭니다.";
+    $("heroHelp").textContent=autoTracking?"위치·문 방향·절대 방위가 확인되면 추정 화살표를 표시합니다.":"버튼을 누르면 위치와 방향 센서를 함께 켭니다.";
     $("sideText").textContent="–";
     $("subNote").textContent="위치가 확인되면 문 방향을 표시합니다";
     renderRoute();
@@ -817,6 +822,8 @@ function computeDoor(){
     $("leftDoorMark").classList.remove("active");
     $("rightDoorMark").classList.remove("active");
     $("heroArrowWrap").style.transform="rotate(0deg)";
+    $("needleWrap").style.transform="rotate(0deg)";
+    arrowRotation=0;
     $("heroSideText").textContent="방향 데이터 확인 필요";
     $("sideText").textContent="–";
     renderRoute();
@@ -824,29 +831,27 @@ function computeDoor(){
   }
   currentDoorSide=side;
   const geographicDoorBearing=(trainBearing + (side==="left"?-90:90) + 360) % 360;
-  doorBearing=calibratedFrontHeading===null
-    ? geographicDoorBearing
-    : (calibratedFrontHeading+(side==="left"?-90:90)+360)%360;
+  doorBearing=geographicDoorBearing;
   $("sideText").textContent = side==="left"?"왼쪽":"오른쪽";
   $("subNote").textContent = movingLike
     ? "다음 역 "+target.name+" · "+directionText()+" 기준"
     : target.name+"역 · "+directionText()+" 기준";
   const estimated = state==="ESTIMATING" || $("sourceChip").classList.contains("est");
-  const headingReady=compassStarted && lastHeading!==null;
-  $("doorHero").className="door-hero has-direction"+(estimated?" estimated":"")+(state==="AT_STATION"?" arrived":"")+(!sensorReliable?" sensor-warning":"");
-  $("heroState").textContent=!sensorReliable?"방향 센서 보정 필요":(!headingReady?"방향 센서 연결 중":(estimated?"위치 추정 중":"실제 문 방향 안내"));
+  const headingReady=canPointDoor();
+  $("doorHero").className="door-hero "+(headingReady?"has-direction":"checking")+(estimated?" estimated":"")+(state==="AT_STATION"?" arrived":"")+(!headingReady?" sensor-warning":"");
+  $("heroState").textContent=headingReady?(estimated?"위치 추정 중":"문 방향 추정 중"):sensorReason;
   $("heroDirection").textContent=stationLabel(target.name);
   $("heroStation").textContent=(movingLike?"다음 역":"현재 역")+" · "+directionText();
   $("heroSideText").textContent=headingReady
-    ? (side==="left"?"왼쪽":"오른쪽")+" 문 · 화살표를 따라 이동하세요"
-    : "열차 진행 기준 "+(side==="left"?"왼쪽":"오른쪽")+" 문";
-  $("heroHelp").textContent=calibratedFrontHeading===null
-    ? "화살표가 흔들리면 열차 앞쪽 보정 버튼을 사용하세요."
-    : "열차 진행 방향 보정값을 적용하고 있습니다.";
+    ? (side==="left"?"왼쪽":"오른쪽")+" 문 · 화살표는 추정 방향입니다"
+    : "열차 진행 기준 "+(side==="left"?"왼쪽":"오른쪽")+" 문 · 화살표 확인 전";
+  $("heroHelp").textContent=headingReady
+    ? "휴대폰 방향을 바꿔도 문 쪽으로 회전합니다. 역 진입 선로 방향과 센서 오차는 현장 확인이 필요합니다."
+    : "수평·절대 방위를 확인할 수 있을 때만 화살표가 나타납니다.";
   $("leftDoorMark").classList.toggle("active",side==="left");
   $("rightDoorMark").classList.toggle("active",side==="right");
-  if (lastHeading!==null) updateArrow(lastHeading);
-  else $("heroArrowWrap").style.transform="rotate("+(side==="left"?-90:90)+"deg)";
+  $("needleWrap").style.display=headingReady?"flex":"none";
+  if (headingReady) updateArrow(lastHeading);
   renderRoute();
 }
 
@@ -871,24 +876,6 @@ function autoToggle(){
   computeDoor();
 }
 
-function calibrateTrainFront(){
-  if (!compassStarted || lastHeading===null){
-    startCompass();
-    $("heroSideText").textContent="방향 센서를 연결한 뒤 다시 눌러주세요";
-    $("heroHelp").textContent="휴대폰 위쪽이 열차 진행 방향을 향해야 합니다.";
-    return;
-  }
-  if (!sensorReliable){
-    $("heroSideText").textContent="센서 정확도가 낮아 보정할 수 없습니다";
-    $("heroHelp").textContent="기기를 8자로 움직인 뒤 다시 시도해주세요.";
-    return;
-  }
-  calibratedFrontHeading=lastHeading;
-  const btn=$("calibrateBtn");
-  btn.classList.add("ready");
-  btn.textContent="✓ 열차 앞쪽 보정 완료 · 다시 맞추려면 누르기";
-  computeDoor();
-}
 function renderRoute(){
   if (!activeLine().supported){
     [1,2,3].forEach(n=>{const strip=$("routeStrip"+n);if(strip)strip.innerHTML="";});
@@ -1426,9 +1413,10 @@ function startCompass(){
   const enableListen=()=>{
     if (compassStarted) return;
     compassStarted=true;
-    if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-    else window.addEventListener('deviceorientation', handleOrientation, true);
+    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    window.addEventListener('deviceorientation', handleOrientation, true);
     compassReady();
+    if(compassFrame===null) compassFrame=requestAnimationFrame(renderCompassFrame);
   };
   if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
     DeviceOrientationEvent.requestPermission().then(s=>{
@@ -1440,61 +1428,132 @@ function startCompass(){
 }
 function compassReady(){
   $("placeholder").style.display="none";
-  $("needleWrap").style.display="flex";
+  $("needleWrap").style.display="none";
   $("startBtn").style.display="none";
-  $("alignBadge").textContent="센서 연결됨 · 정렬 대기";
-  $("heroSideText").textContent=currentDoorSide?"방향 센서 연결됨":"방향 센서 연결됨 · 위치 확인 중";
-  $("heroHelp").textContent="화살표가 흔들리면 열차 앞쪽 보정을 사용하세요.";
+  $("alignBadge").textContent="절대 방위와 수평 상태 확인 중";
+  $("tiltStatus").textContent="휴대폰을 수평에 가깝게 놓아주세요";
+  computeDoor();
 }
 function manualFallback(msg){
   compassStarted=true;
   sensorReliable=false;
+  sensorReason="방향 센서 사용 불가";
   $("alignBadge").textContent=msg;
   $("placeholder").style.display="none";
-  $("needleWrap").style.display="flex";
+  $("needleWrap").style.display="none";
   $("startBtn").style.display="none";
   $("manualRow").style.display="block";
-  $("doorHero").classList.add("sensor-warning");
-  $("heroState").textContent="방향 센서를 사용할 수 없음";
-  $("heroSideText").textContent="왼쪽·오른쪽 문 정보만 확인해주세요";
-  onHeading(0);
+  $("tiltStatus").textContent=msg;
+  computeDoor();
 }
+let lastAbsoluteAt=0;
 function handleOrientation(e){
   let heading;
-  if (typeof e.webkitCompassHeading==="number") heading=e.webkitCompassHeading;
-  else if (e.alpha!==null && e.absolute!==false) heading=(360-e.alpha)%360;
-  else return;
+  if (Number.isFinite(e.webkitCompassHeading)) heading=e.webkitCompassHeading;
+  else if (e.absolute===true && Number.isFinite(e.alpha)) heading=360-e.alpha;
+  else {
+    if (performance.now()-lastAbsoluteAt>1500){
+      const changed=sensorReason!=="절대 방위 미지원 · 좌우 문만 안내";
+      sensorReliable=false;
+      sensorReason="절대 방위 미지원 · 좌우 문만 안내";
+      if(changed){ $("tiltStatus").textContent="절대 방위를 확인할 수 없어요"; computeDoor(); }
+    }
+    return;
+  }
+  lastAbsoluteAt=performance.now();
+  if (!Number.isFinite(e.beta)||!Number.isFinite(e.gamma)){
+    const changed=sensorReason!=="기울기 확인 불가 · 좌우 문만 안내";
+    sensorReliable=false;
+    sensorReason="기울기 확인 불가 · 좌우 문만 안내";
+    if(changed){ $("tiltStatus").textContent="휴대폰 기울기를 확인할 수 없어요"; computeDoor(); }
+    return;
+  }
+  const limit=tiltReady?35:28;
+  tiltReady=Math.abs(e.beta)<=limit && Math.abs(e.gamma)<=limit;
+  const accuracyOk=!Number.isFinite(e.webkitCompassAccuracy) || e.webkitCompassAccuracy<=35;
+  sensorReliable=tiltReady&&accuracyOk;
+  sensorReason=!tiltReady?"휴대폰을 수평으로 놓아주세요":(!accuracyOk?"나침반 정확도 낮음 · 좌우 문만 안내":"문 방향 추정 중");
+  const tiltMessage=sensorReliable?"수평 확인 · 휴대폰은 어느 방향으로 향해도 됩니다":sensorReason;
+  if($("tiltStatus").textContent!==tiltMessage) $("tiltStatus").textContent=tiltMessage;
+  $("tiltStatus").classList.toggle("ready",sensorReliable);
+  if(!sensorReliable) return;
   const screenAngle=(screen.orientation && typeof screen.orientation.angle==="number")
     ? screen.orientation.angle : (typeof window.orientation==="number"?window.orientation:0);
   heading=(heading+screenAngle+360)%360;
-  sensorReliable=!(typeof e.webkitCompassAccuracy==="number" && e.webkitCompassAccuracy>50);
   onHeading(heading);
 }
-function onHeading(heading){
-  const normalized=(heading%360+360)%360;
-  lastHeading=normalized;
-  $("heroCompassDial").style.transform="rotate("+(-normalized)+"deg)";
-  updateArrow(normalized);
+function normalizeAngle(angle){
+  return (angle%360+360)%360;
+}
+function shortestAngleDelta(from,to){
+  return ((to-from+540)%360)-180;
+}
+function unwrapAngle(previousContinuous,nextNormalized,initialReference=0){
+  if (previousContinuous===null) return initialReference+shortestAngleDelta(normalizeAngle(initialReference),nextNormalized);
+  return previousContinuous+shortestAngleDelta(normalizeAngle(previousContinuous),nextNormalized);
+}
+function canPointDoor(){
+  return compassStarted && sensorReliable && !manualSimulation && doorBearing!==null &&
+    lastHeading!==null && headingUpdatedAt>0 && performance.now()-headingUpdatedAt<1500 && !document.hidden;
+}
+function onHeading(heading,simulation=false){
+  if(!Number.isFinite(heading)) return;
+  manualSimulation=simulation;
+  const normalized=normalizeAngle(heading);
+  const wasStale=headingUpdatedAt>0 && performance.now()-headingUpdatedAt>=1500;
+  continuousHeading=unwrapAngle(continuousHeading,normalized);
+  if(displayHeading===null || wasStale) displayHeading=continuousHeading;
+  if(simulation) $("manualVal").textContent=Math.round(normalized)+"° (모의값)";
+  headingUpdatedAt=performance.now();
+  if(compassFrame===null) compassFrame=requestAnimationFrame(renderCompassFrame);
+}
+function renderCompassFrame(now){
+  compassFrame=null;
+  const dt=frameTime?Math.min(50,now-frameTime):16;
+  frameTime=now;
+  if(displayHeading!==null && continuousHeading!==null){
+    const error=continuousHeading-displayHeading;
+    displayHeading+=Math.abs(error)<.12?error:error*(1-Math.exp(-dt/100));
+    lastHeading=normalizeAngle(displayHeading);
+    if(canPointDoor()){
+      $("heroCompassDial").style.transform="rotate("+(-displayHeading)+"deg)";
+      updateArrow(lastHeading);
+    }
+  }
+  const ready=canPointDoor();
+  if(ready!==pointerWasReady){
+    pointerWasReady=ready;
+    if(!ready && sensorReliable && performance.now()-headingUpdatedAt>=1500){
+      sensorReason="방향 센서 신호 끊김 · 좌우 문만 안내";
+      $("tiltStatus").textContent="방향 센서 신호를 기다리고 있어요";
+    }
+    $("alignBadge").textContent=ready?"문 방향 추정 중":sensorReason;
+    $("doorBg").classList.toggle("open",false);
+    computeDoor();
+  }
+  if(compassStarted) compassFrame=requestAnimationFrame(renderCompassFrame);
+}
+function setCompassText(id,value){
+  const element=$(id);
+  if(element.textContent!==value) element.textContent=value;
 }
 function updateArrow(heading){
-  if (doorBearing===null) return;
-  const rel=((doorBearing-heading)%360+360)%360;
-  $("needleWrap").style.transform="rotate("+rel+"deg)";
-  $("heroArrowWrap").style.transform="rotate("+rel+"deg)";
+  if (!canPointDoor()) return;
+  const rel=normalizeAngle(doorBearing-heading);
+  arrowRotation=unwrapAngle(arrowRotation,rel,0);
+  $("needleWrap").style.transform="rotate("+arrowRotation+"deg)";
+  $("heroArrowWrap").style.transform="rotate("+arrowRotation+"deg)";
   const delta=Math.min(rel,360-rel);
-  const aligned=sensorReliable && delta<=ALIGN_THRESHOLD;
+  const aligned=delta<=ALIGN_THRESHOLD;
   $("arrowSvg").classList.toggle("misaligned",!aligned);
   $("alignBadge").classList.toggle("on",aligned);
   $("alignBadge").classList.toggle("off",!aligned);
   $("doorBg").classList.toggle("open",aligned);
-  $("doorHero").classList.toggle("sensor-warning",!sensorReliable);
-  $("alignBadge").textContent=!sensorReliable?"센서 정확도가 낮아요 · 기기를 8자로 움직여 보정하세요":
-    (aligned?"✓ 이 방향이 하차 방향이에요":"화살표 쪽으로 몸을 돌려보세요");
-  $("heroState").textContent=!sensorReliable?"방향 센서 보정 필요":
-    (state==="ESTIMATING"?"위치 추정 중":(aligned?"문 방향을 향하고 있어요":"실제 문 방향 안내"));
-  $("heroSideText").textContent=!sensorReliable?"센서가 불안정합니다 · 열차 앞쪽을 다시 맞춰주세요":
-    (aligned?"도착하면 바로 앞의 문이 열려요":((currentDoorSide==="left"?"왼쪽":"오른쪽")+" 문 · 화살표를 따라 이동하세요"));
-  const mv=$("manualVal"); if (mv) mv.textContent=Math.round(heading)+"°";
+  setCompassText("alignBadge",aligned?"✓ 추정 문 방향을 향하고 있어요":"휴대폰을 화살표 쪽으로 돌려보세요");
+  setCompassText("heroState",state==="ESTIMATING"?"위치 추정 중":"문 방향 추정 중");
+  setCompassText("heroSideText",aligned?"추정 문 방향입니다 · 실제 문을 확인하세요":
+    ((currentDoorSide==="left"?"왼쪽":"오른쪽")+" 문 · 화살표는 추정 방향입니다"));
+  setCompassText("manualVal",Math.round(heading)+"°");
 }
 
 selectLine("ICN1");
