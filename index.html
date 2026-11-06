@@ -281,6 +281,17 @@
   .bearing-label.north{font-size:13px;}
   .compass-major-ticks{opacity:.45;}
   .door-hero.approaching .hero-state{color:#fff;background:var(--green);border-color:var(--green);}
+  .dest-selector{margin-top:-6px;}
+  .door-hero.dest-wait .hero-compass{display:none;}
+  .door-hero.dest-wait .hero-side-text{margin-top:18px;}
+  .report-bar{margin-top:14px;border-top:1px solid var(--panel-edge);padding-top:12px;text-align:center;}
+  .report-q{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;}
+  .report-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .report-row button{border:1px solid var(--panel-edge);background:#fff;color:var(--text);border-radius:12px;padding:11px 8px;font-size:15px;font-weight:700;cursor:pointer;}
+  .report-row button:active{background:#eef4ff;}
+  .report-done{font-size:12px;color:var(--green);margin-top:8px;min-height:18px;}
+  .report-done button{border:0;background:none;color:var(--text-dim);text-decoration:underline;font-size:12px;cursor:pointer;}
+  .report-text{width:100%;box-sizing:border-box;border:1px solid var(--panel-edge);border-radius:10px;padding:8px;font-size:12px;font-family:ui-monospace,monospace;color:var(--text);background:#f9fbfe;resize:vertical;}
   body:not(.debug) .debug-only{display:none;}
   @media (max-width:360px){.hero-direction{font-size:27px}.door-hero.has-door .hero-direction{font-size:42px}.hero-compass{width:min(78vw,264px)}.bearing-label{font-size:9px}}
   @media (prefers-reduced-motion:reduce){.hero-arrow-wrap,.hero-compass-dial{transition:none}.door-hero.arrived .hero-compass{animation:none}}
@@ -314,6 +325,13 @@
     </select>
     <span class="line-support" id="lineSupport">베타 지원</span>
   </div>
+  <div class="line-selector dest-selector">
+    <label for="destSelect">내릴 역</label>
+    <select id="destSelect" onchange="setDestination(this.value)" aria-label="내릴 역 선택">
+      <option value="">선택 안 함 · 모든 역 안내</option>
+    </select>
+    <span class="line-support" id="destInfo"></span>
+  </div>
 
   <section class="door-hero checking" id="doorHero" aria-live="polite">
     <div class="hero-meta">
@@ -341,6 +359,14 @@
       <div class="calibrate-btn" id="tiltStatus" role="status">시작하면 위치와 방향을 확인해요</div>
     </div>
     <div class="hero-help" id="heroHelp">위치·방향 권한을 허용해 주세요.</div>
+    <div class="report-bar" id="reportBar" hidden>
+      <div class="report-q" id="reportQ">실제로 열린 문은?</div>
+      <div class="report-row">
+        <button type="button" onclick="reportDoor('left')">← 왼쪽</button>
+        <button type="button" onclick="reportDoor('right')">오른쪽 →</button>
+      </div>
+      <div class="report-done" id="reportDone"></div>
+    </div>
     <div id="leftDoorMark" hidden></div><div id="rightDoorMark" hidden></div>
   </section>
 
@@ -465,6 +491,22 @@
     </div></div>
   </details>
 
+  <details class="fold" id="reportFold">
+    <summary>현장 기록 (<span id="reportCount">0</span>건)</summary>
+    <div class="fold-body">
+      <div class="card">
+        <span class="label">역에서 "실제로 열린 문"을 누르면 여기에 쌓여요. 이 휴대폰에서는 기록한 문이 먼저 안내되고, 복사해서 보내 주면 모든 사용자용 데이터에 반영할 수 있어요.</span>
+        <textarea id="reportText" class="report-text" readonly rows="6" placeholder="아직 기록이 없어요"></textarea>
+        <div class="dir-row" style="margin-top:8px;">
+          <button type="button" class="dir-btn" onclick="copyReports()">복사하기</button>
+          <button type="button" class="dir-btn" onclick="shareReports()">공유하기</button>
+        </div>
+        <button type="button" class="dir-btn" style="width:100%;margin-top:8px;" onclick="clearReports()">기록 모두 지우기</button>
+        <div class="dir-note" id="reportNote"></div>
+      </div>
+    </div>
+  </details>
+
   <details class="fold">
     <summary>데이터 출처와 검증 상태</summary>
     <div class="fold-body">
@@ -489,6 +531,7 @@
 <script src="config.js"></script>
 <script src="data/stations-seoul.js"></script>
 <script src="data/platform-types-seoul.js"></script>
+<script src="data/door-overrides.js"></script>
 <script>
 /* ═══ 공용 데이터/유틸 ═══ */
 const INCHEON_LINE_1_STATIONS = [
@@ -641,6 +684,142 @@ function findStationIndexByName(name){
   // 부분 일치 후보가 하나뿐일 때만 사용하고, 여러 개면 잘못 연결하지 않도록 포기합니다.
   return partial.length===1?partial[0].idx:-1;
 }
+/* ═══ 문 방향 출처: 내 기록 > 현장 확인 데이터 > 실시간 API > 승강장 구조 추정 ═══ */
+const DOOR_OVERRIDES=window.DOOR_OVERRIDES||{};
+const DOOR_SOURCE_NOTE={mine:"내가 직접 기록한 문이에요. ",confirmed:"현장에서 확인된 문이에요. ",derived:"승강장 구조로 추정한 문이에요. "};
+let doorReports=[];
+try{ doorReports=JSON.parse(localStorage.getItem("doorReports")||"[]"); }catch(_){}
+if(!Array.isArray(doorReports)) doorReports=[];
+function myReportedSide(name){
+  const key=plainStationName(name);
+  const hit=doorReports.findLast(r=>r.line===activeLineId&&r.dir===dir&&plainStationName(r.station)===key);
+  return hit?hit.actual:null;
+}
+function doorInfo(name,skipMine=false){
+  const key=plainStationName(name);
+  const mine=skipMine?null:myReportedSide(name);
+  if(mine) return {side:mine,source:"mine"};
+  const confirmed=DOOR_OVERRIDES[activeLineId]?.[key]?.[dir];
+  if(confirmed) return {side:confirmed,source:"confirmed"};
+  const live=LIVE_DOOR_DIRECTIONS[key]?.[dir];
+  if(live) return {side:live,source:"api"};
+  const entry=DOOR_DIRECTIONS[name];
+  if(entry?.[dir]) return {side:entry[dir],source:entry.derived?"derived":"table"};
+  return {side:null,source:null};
+}
+
+/* ═══ 현장 기록: 역에서 실제로 열린 문을 남깁니다 ═══ */
+const sideWordOf=s=>s==="left"?"왼쪽":(s==="right"?"오른쪽":"없음");
+const SOURCE_WORD={mine:"내 기록",confirmed:"확인됨",api:"실시간",derived:"추정",table:"베타표"};
+function reportTargetIdx(){ return state==="IDLE"?-1:curIdx; }
+function renderReportBar(){
+  const idx=reportTargetIdx();
+  $("reportBar").hidden=idx<0||!activeLine().supported;
+  if(idx<0) return;
+  const name=stationLabel(STATIONS[idx].name);
+  $("reportQ").textContent=(state==="AT_STATION"?name+"에서":"방금 지난 "+name+"에서")+" 실제로 열린 문은?";
+}
+function reportText(){
+  return doorReports.map(r=>{
+    const d=new Date(r.t), pad=n=>String(n).padStart(2,"0");
+    const time=(d.getMonth()+1)+"/"+d.getDate()+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+    const ok=r.shown?(r.shown===r.actual?"일치":"틀림"):"안내 없음";
+    return [time,r.lineName,r.station,r.dirText+"("+r.dir+")","실제 "+sideWordOf(r.actual),"앱 "+sideWordOf(r.shown)+(r.source?"·"+SOURCE_WORD[r.source]:""),ok].join(" | ");
+  }).join("\n");
+}
+function saveReports(){
+  try{ localStorage.setItem("doorReports",JSON.stringify(doorReports)); }catch(_){}
+  $("reportCount").textContent=doorReports.length;
+  $("reportText").value=reportText();
+}
+function reportDoor(actual){
+  const idx=reportTargetIdx();
+  if(idx<0) return;
+  const station=STATIONS[idx].name;
+  const shown=doorInfo(station,true);
+  doorReports.push({t:new Date().toISOString(),line:activeLineId,lineName:activeLine().name,station,dir,dirText:directionText(),actual,shown:shown.side,source:shown.source});
+  saveReports();
+  $("reportDone").innerHTML="";
+  $("reportDone").append(stationLabel(station)+" "+sideWordOf(actual)+" 문으로 기록했어요 ✓ ");
+  const undo=document.createElement("button");
+  undo.type="button"; undo.textContent="취소"; undo.onclick=undoReport;
+  $("reportDone").append(undo);
+  computeDoor();
+}
+function undoReport(){
+  doorReports.pop();
+  saveReports();
+  $("reportDone").textContent="기록을 취소했어요";
+  computeDoor();
+}
+function copyReports(){
+  const text=reportText();
+  if(!text){ $("reportNote").textContent="복사할 기록이 없어요"; return; }
+  const done=()=>{ $("reportNote").textContent="복사했어요. 메신저에 붙여 넣어 보내 주세요."; };
+  const fallback=()=>{ $("reportText").select(); try{ document.execCommand("copy"); done(); }catch(_){ $("reportNote").textContent="위 글상자를 길게 눌러 직접 복사해 주세요"; } };
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done,fallback); else fallback();
+}
+function shareReports(){
+  const text=reportText();
+  if(!text){ $("reportNote").textContent="공유할 기록이 없어요"; return; }
+  if(navigator.share) navigator.share({title:"내리는 문 현장 기록",text}).catch(()=>{});
+  else copyReports();
+}
+function clearReports(){
+  if(!doorReports.length||!confirm("현장 기록 "+doorReports.length+"건을 모두 지울까요?")) return;
+  doorReports=[];
+  saveReports();
+  $("reportNote").textContent="기록을 지웠어요";
+  computeDoor();
+}
+
+/* ═══ 내릴 역: 그 역의 문만 안내하고 바로 전에만 진동합니다 ═══ */
+let destName="", destDone=false, dirManual=false;
+function loadDestination(){
+  try{ destName=localStorage.getItem("dest:"+activeLineId)||""; }catch(_){ destName=""; }
+}
+function populateDestSelect(){
+  const sel=$("destSelect");
+  sel.length=1;
+  STATIONS.forEach(s=>sel.add(new Option(s.name,s.name)));
+  sel.value=findStationIndexByName(destName)>=0?STATIONS[findStationIndexByName(destName)].name:"";
+  sel.disabled=!activeLine().supported;
+}
+function activeDest(){ return destName&&!destDone?findStationIndexByName(destName):-1; }
+function stepsAhead(from,to,d=dir){
+  if(from<0||to<0) return -1;
+  for(let i=from,n=0;n<=STATIONS.length;n++){
+    if(i===to) return n;
+    const j=neighborIdx(i,d);
+    if(j===i) return -1;
+    i=j;
+  }
+  return -1;
+}
+function inferDirFromDestination(){
+  const t=activeDest();
+  if(t<0||t===curIdx||dirLocked||dirManual||state==="IDLE") return;
+  const d=activeRoute?.circular
+    ? (stepsAhead(curIdx,t,"down")<=stepsAhead(curIdx,t,"up")?"down":"up")
+    : (t>curIdx?"down":"up");
+  if(d===dir) return;
+  dir=d;
+  $("dirDown").classList.toggle("active",d==="down");
+  $("dirUp").classList.toggle("active",d==="up");
+  $("dirNote").textContent="✓ 내릴 역 쪽으로 방향을 정했어요";
+}
+function setDestination(name){
+  destName=name||""; destDone=false; approachingKey="";
+  try{ localStorage.setItem("dest:"+activeLineId,destName); }catch(_){}
+  inferDirFromDestination();
+  computeDoor();
+}
+function heroStateText(headingReady,estimated){
+  if(state==="AT_STATION"&&activeDest()===curIdx) return "도착 · 내리세요";
+  if((state==="MOVING"||state==="ESTIMATING")&&approachingKey===arrivalKey()) return "곧 도착";
+  return headingReady?(estimated?"추정 위치":"안내 중"):sensorReason;
+}
+
 function directionText(){
   if (activeRoute?.circular) return dir==="down"?"내선순환":"외선순환";
   return (dir==="down"?STATIONS.at(-1):STATIONS[0])?.name+" 방면";
@@ -688,6 +867,8 @@ document.addEventListener("visibilitychange",()=>{ if(!document.hidden) requestW
 function maybeAlertArrival(){
   if(!autoTracking||!currentDoorSide) return;
   if(state!=="MOVING"&&state!=="ESTIMATING") return;
+  const target=activeDest();
+  if(target>=0&&nextIdx!==target) return; // 내릴 역을 정했으면 그 역 직전에만 알립니다
   const key=arrivalKey();
   if(approachingKey===key) return;
   approachingKey=key;
@@ -815,6 +996,9 @@ function selectLine(id){
   curIdx=Math.min(10,STATIONS.length-1); nextIdx=neighborIdx(curIdx,"down"); dir="down"; dirLocked=false; lastFix=null; state="IDLE";
   currentDoorSide=null; doorBearing=null;
   LIVE_DOOR_DIRECTIONS={};
+  dirManual=false; destDone=false;
+  loadDestination();
+  populateDestSelect();
   if (typeof resetApiTracking==="function") resetApiTracking();
   $("lineSelect").value=id;
   try { localStorage.setItem("selectedLine",id); } catch (_) {}
@@ -840,13 +1024,17 @@ function setSource(cls, text){
 }
 function setDir(d, manual){
   dir=d;
-  if (manual) dirLocked=false;
+  if (manual){ dirLocked=false; dirManual=true; }
   $("dirDown").classList.toggle("active",d==="down");
   $("dirUp").classList.toggle("active",d==="up");
   $("dirNote").textContent = dirLocked ? "✓ 이동 방향으로 자동 판별됨" : "";
   computeDoor();
 }
 function computeDoor(){
+  computeDoorView();
+  renderReportBar();
+}
+function computeDoorView(){
   if (!activeLine().supported){ renderUnsupportedLine(); return; }
   nextIdx = neighborIdx(curIdx, dir);
   const from=STATIONS[curIdx], to=STATIONS[nextIdx];
@@ -876,10 +1064,35 @@ function computeDoor(){
     : (previousIdx!==curIdx
         ? bearingBetween(STATIONS[previousIdx],target)
         : bearingBetween(from,to));
-  const liveSide = LIVE_DOOR_DIRECTIONS[plainStationName(target.name)]?.[dir];
-  const tableEntry = DOOR_DIRECTIONS[target.name];
-  const side = liveSide || tableEntry?.[dir];
-  const derivedSide = !liveSide && Boolean(tableEntry?.derived);
+  const info = doorInfo(target.name);
+  const side = info.side;
+  const destIdx = activeDest();
+  const targetIdx = movingLike ? nextIdx : curIdx;
+  if (destIdx>=0 && destIdx!==targetIdx){
+    const ahead = stepsAhead(targetIdx, destIdx);
+    if (ahead>=0){
+      // 내릴 역이 아직 남았으면 중간 역은 조용히 두고, 내릴 역의 문만 미리 알려 줍니다.
+      const remaining = ahead + (movingLike ? 1 : 0);
+      const destStation = STATIONS[destIdx];
+      const destInfo = doorInfo(destStation.name);
+      const destWord = destInfo.side ? sideWordOf(destInfo.side) : null;
+      currentDoorSide = destInfo.side; doorBearing = null;
+      $("doorHero").className = "door-hero checking dest-wait" + (destWord ? " has-door" : "");
+      $("heroState").textContent = remaining + "정거장 남음";
+      $("heroDirection").textContent = destWord ? destWord + " 문" : "문 방향 확인 중";
+      $("heroStation").textContent = "내릴 역 " + stationLabel(destStation.name) + " · " + directionText();
+      $("heroArrowWrap").style.transform = "rotate(0deg)";
+      $("needleWrap").style.transform = "rotate(0deg)";
+      arrowRotation = 0;
+      $("heroSideText").textContent = (movingLike ? "다음 역 " : "지금 ") + stationLabel(target.name) + " · 내릴 역에서 화살표로 안내해요";
+      $("heroHelp").textContent = (DOOR_SOURCE_NOTE[destInfo.source] || "") + "내릴 역 바로 전에 진동으로 알려 드려요.";
+      $("leftDoorMark").classList.toggle("active", destInfo.side === "left");
+      $("rightDoorMark").classList.toggle("active", destInfo.side === "right");
+      $("sideText").textContent = destWord || "–";
+      renderRoute();
+      return;
+    }
+  }
   if (!side){
     currentDoorSide=null; doorBearing=null;
     $("doorHero").className="door-hero checking";
@@ -910,14 +1123,15 @@ function computeDoor(){
   const headingReady=canPointDoor();
   const sideWord=side==="left"?"왼쪽":"오른쪽";
   const approaching=movingLike && approachingKey===arrivalKey();
-  $("doorHero").className="door-hero has-door "+(headingReady?"has-direction":"checking")+(estimated?" estimated":"")+(state==="AT_STATION"?" arrived":"")+(approaching?" approaching":"")+(!headingReady?" sensor-warning":"");
-  $("heroState").textContent=approaching?"곧 도착":(headingReady?(estimated?"추정 위치":"안내 중"):sensorReason);
+  const atDest=destIdx>=0 && destIdx===targetIdx;
+  $("doorHero").className="door-hero has-door "+(headingReady?"has-direction":"checking")+(estimated?" estimated":"")+(state==="AT_STATION"?" arrived":"")+(approaching||(atDest&&state==="AT_STATION")?" approaching":"")+(!headingReady?" sensor-warning":"");
+  $("heroState").textContent=heroStateText(headingReady,estimated);
   $("heroDirection").textContent=sideWord+" 문";
-  $("heroStation").textContent=(movingLike?"다음 역 ":"이번 역 ")+stationLabel(target.name)+" · "+directionText();
+  $("heroStation").textContent=(atDest?(movingLike?"다음 역이 내릴 역 ":"내릴 역 "):(movingLike?"다음 역 ":"이번 역 "))+stationLabel(target.name)+" · "+directionText();
   $("heroSideText").textContent=headingReady
     ? "화살표 쪽 문이 열려요"
     : "열차가 가는 쪽을 볼 때 "+sideWord+"이에요";
-  $("heroHelp").textContent=(derivedSide?"승강장 구조로 추정한 문이에요. ":"")+(headingReady
+  $("heroHelp").textContent=(DOOR_SOURCE_NOTE[info.source]||"")+(headingReady
     ? "휴대폰을 돌려도 화살표는 문 쪽을 가리켜요. 실제 문도 확인하세요."
     : sensorHelp);
   $("leftDoorMark").classList.toggle("active",side==="left");
@@ -949,6 +1163,7 @@ function autoToggle(){
     computeDoor();
     return;
   }
+  destDone=false;
   startCompass();
   switchMode(3);
   startUnifiedAuto();
@@ -988,6 +1203,7 @@ function renderRoute(){
 }
 function bannerAtStation(idx, note){
   state="AT_STATION"; curIdx=idx;
+  inferDirFromDestination();
   $("statusBanner").className="status-banner stopped";
   $("statusIcon").textContent="🚉";
   $("statusTitle").innerHTML='<span class="live-dot"></span>현재 역: <span class="hl">'+STATIONS[idx].name+'</span>';
@@ -995,6 +1211,8 @@ function bannerAtStation(idx, note){
   computeDoor();
 }
 function bannerMoving(detail){
+  // 내릴 역을 떠나면 이번 여정 안내를 마칩니다(저장된 내릴 역은 다음 시작 때 다시 씁니다).
+  if (activeDest()===curIdx && state!=="IDLE") destDone=true;
   state="MOVING";
   nextIdx=neighborIdx(curIdx,dir);
   $("statusBanner").className="status-banner moving";
@@ -1197,6 +1415,7 @@ function applyApiRoute(match){
     const remapped=findStationIndexByName(currentName);
     curIdx=remapped>=0?remapped:match.queryIdx;
     updateDirectionButtons();
+    populateDestSelect();
   }
   dir=match.tripDir||dir;
   nextIdx=neighborIdx(curIdx,dir);
@@ -1664,8 +1883,7 @@ function updateArrow(heading){
   $("alignBadge").classList.toggle("off",!aligned);
   $("doorBg").classList.toggle("open",aligned);
   setCompassText("alignBadge",aligned?"✓ 추정 문 방향을 향하고 있어요":"휴대폰을 화살표 쪽으로 돌려보세요");
-  const approaching=(state==="MOVING"||state==="ESTIMATING") && approachingKey===arrivalKey();
-  setCompassText("heroState",approaching?"곧 도착":(state==="ESTIMATING"?"추정 위치":"안내 중"));
+  setCompassText("heroState",heroStateText(true,state==="ESTIMATING"));
   setCompassText("heroSideText",aligned?"지금 보는 쪽 문이 열려요":"화살표 쪽 문이 열려요");
   setCompassText("manualVal",Math.round(heading)+"°");
 }
@@ -1676,6 +1894,7 @@ function updateArrow(heading){
   let saved=null;
   try { saved=localStorage.getItem("selectedLine"); } catch (_) {}
   selectLine(saved && LINE_CATALOG[saved] ? saved : "L2");
+  saveReports();
 })();
 </script>
 
