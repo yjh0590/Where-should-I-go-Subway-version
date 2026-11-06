@@ -6,7 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>내리는 문 — 지하철 하차 방향 안내</title>
 <meta name="description" content="GPS와 나침반으로 지하철에서 내리는 문 방향을 화살표로 알려주는 웹앱">
-<meta name="theme-color" content="#f4f7fb">
+<meta name="theme-color" content="#f4f4f1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -292,6 +295,76 @@
   .report-done{font-size:12px;color:var(--green);margin-top:8px;min-height:18px;}
   .report-done button{border:0;background:none;color:var(--text-dim);text-decoration:underline;font-size:12px;cursor:pointer;}
   .report-text{width:100%;box-sizing:border-box;border:1px solid var(--panel-edge);border-radius:10px;padding:8px;font-size:12px;font-family:ui-monospace,monospace;color:var(--text);background:#f9fbfe;resize:vertical;}
+  /* ═══ 디자인 A(역명판)·C(노선도) 공통: 그라데이션·그림자·둥근 모서리를 걷어냅니다 ═══ */
+  .station-sign,.route-plan{display:none;}
+  .theme-switch{display:flex;border:1px solid var(--panel-edge);flex-shrink:0;}
+  .theme-switch button{border:0;background:transparent;padding:8px 10px;font:700 12px/1 inherit;color:var(--text-dim);cursor:pointer;}
+  .theme-switch button.on{background:var(--text);color:var(--panel);}
+  body.themed{--bg:#f4f4f1;--panel:#fff;--panel-edge:#dcdcd6;--text:#111;--text-dim:#6e6e69;--door:#e4002b;--navy:#1b2a4a;--radius:0px;
+    background:var(--bg);color:var(--text);}
+  .themed .eyebrow,.themed p.desc,.themed h1 .dot,.themed .line-badge{display:none;}
+  .themed .brand-row{align-items:center;}
+  .themed h1{font-size:21px;}
+  .themed .line-selector{border-radius:0;box-shadow:none;}
+  .themed .line-selector select{border-radius:0;background:var(--bg);}
+  .themed .line-support{color:var(--text-dim);}
+  .themed .door-hero,.themed .door-hero.checking,.themed .door-hero.estimated{background:var(--panel);border:1px solid var(--panel-edge);border-radius:0;box-shadow:none;}
+  .themed .hero-meta>span{border-radius:0;background:none;border:1px solid var(--panel-edge);color:var(--text-dim);}
+  .themed .hero-state,.themed .door-hero.checking .hero-state,.themed .door-hero.estimated .hero-state{color:var(--text);}
+  .themed .door-hero.approaching .hero-state{background:var(--door);border-color:var(--door);color:#fff;}
+  .themed .hero-direction::after{display:none;}
+  .themed .hero-direction{color:var(--text);}
+  .theme-c .hero-station{text-align:left;}
+  .theme-c .route-plan.empty{display:none;}
+  .themed .door-hero.has-door .hero-direction,.themed .door-hero.has-door.estimated .hero-direction{color:var(--text);}
+  .themed .hero-station{display:block;background:none;padding:0;margin:8px 0 0;border-radius:0;color:var(--text-dim);font-weight:500;}
+  .themed .hero-compass{background:none;border:1px solid var(--panel-edge);box-shadow:none;width:min(60vw,230px);}
+  .themed .compass-major-ticks,.themed .north-index{display:none;}
+  .themed .bearing-label.north{color:var(--text-dim);}
+  .themed .hero-center-dot{width:10px;height:10px;border:0;background:var(--text);box-shadow:none;}
+  .themed .hero-arrow-svg{filter:none;width:104px;height:104px;}
+  .themed .door-hero.has-direction .hero-arrow-fill,.themed .door-hero.estimated .hero-arrow-fill{fill:var(--text);}
+  .themed .door-hero.sensor-warning .hero-arrow-fill{fill:#b5b5ae;}
+  .themed .door-hero.arrived .hero-compass{animation:none;}
+  .themed .hero-side-text,.themed .door-hero.estimated .hero-side-text{color:var(--text);font-weight:700;font-size:15px;}
+  .themed .hero-side-text,.themed .hero-help{word-break:keep-all;text-wrap:balance;}
+  .themed .auto-track{background:var(--text);color:var(--panel);border-radius:0;box-shadow:none;font-weight:700;}
+  .themed .auto-track.stop{background:transparent;color:var(--text);border:1.5px solid var(--text);}
+  .themed .calibrate-btn,.themed .calibrate-btn.ready{border-radius:0;border-color:var(--panel-edge);color:var(--text-dim);background:transparent;font-weight:500;}
+  .themed details.fold>summary,.themed .fold-body,.themed .card,.themed .dir-btn,.themed .report-row button,.themed .report-text,.themed .status-banner{border-radius:0;}
+  .themed details.fold>summary{color:var(--text);}
+  .themed .report-done{color:var(--text);}
+  .themed .dir-btn.active{border-color:var(--text);background:var(--panel);}
+  /* A · 역명판: 노선색 띠, 역 이름, 이전·다음 역, 남색 문 표지 */
+  body.theme-a{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+  .theme-a .station-sign{display:block;margin-top:14px;border:1px solid var(--panel-edge);text-align:center;background:#fff;}
+  .theme-a .station-sign::before{content:"";display:block;height:10px;background:var(--line);}
+  .sign-label{font-size:12px;color:var(--text-dim);margin-top:14px;}
+  .sign-name{font-size:clamp(30px,10vw,42px);font-weight:900;letter-spacing:-.03em;line-height:1.2;padding:2px 8px 12px;word-break:keep-all;}
+  .sign-nb{display:flex;justify-content:space-between;gap:8px;background:var(--line);color:#fff;font-size:13px;font-weight:700;padding:8px 12px;min-height:33px;}
+  .theme-a .hero-direction{background:#9a9fa8;color:#fff;text-align:left;padding:16px 18px;margin-top:12px;font-size:clamp(26px,8vw,32px);}
+  .theme-a .door-hero.has-door .hero-direction,.theme-a .door-hero.has-door.estimated .hero-direction{background:var(--navy);color:#fff;font-size:clamp(40px,12vw,52px);}
+  .theme-a .door-hero.has-door.approaching .hero-direction{box-shadow:inset 6px 0 0 #ffd400;}
+  /* C · 노선도: 한 줄 큰 글자, 세로 노선도, 열차 평면도 */
+  body.theme-c{font-family:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+  .theme-c .hero-meta{border-bottom:2px solid var(--text);padding-bottom:12px;}
+  .theme-c .hero-direction{text-align:left;font-size:clamp(26px,8vw,34px);font-weight:700;letter-spacing:-.04em;margin-top:22px;}
+  .theme-c .door-hero.has-door .hero-direction{font-size:clamp(44px,15vw,64px);white-space:nowrap;}
+  .theme-c .route-plan{display:grid;grid-template-columns:1fr 92px;gap:14px;align-items:center;margin:20px 0 6px;}
+  .mini-route{position:relative;padding-left:32px;}
+  .mini-route::before{content:"";position:absolute;left:9px;top:16px;bottom:16px;width:6px;background:var(--line);}
+  .mr-st{position:relative;height:46px;display:flex;align-items:center;font-size:14px;color:var(--text-dim);word-break:keep-all;}
+  .mr-st::before{content:"";position:absolute;left:-30px;width:14px;height:14px;border-radius:50%;background:var(--panel);border:4px solid var(--line);}
+  .mr-st.cur{color:var(--text);font-weight:700;font-size:17px;}
+  .mr-st.cur::before{background:var(--text);border-color:var(--text);}
+  .mr-st:empty{visibility:hidden;}
+  .train-plan{text-align:center;font-size:12px;color:var(--text-dim);}
+  .tp-box{position:relative;width:48px;height:126px;border:2px solid var(--text);margin:6px auto;}
+  .tp-box i{position:absolute;width:6px;height:20px;background:var(--panel-edge);}
+  .tp-box i.l{left:-5px;}.tp-box i.r{right:-5px;}
+  .tp-box.left i.l,.tp-box.right i.r{background:var(--door);}
+  .tp-box::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:var(--text);transform:translate(-50%,-50%);}
+  .train-plan b{color:var(--door);font-weight:700;}
   body:not(.debug) .debug-only{display:none;}
   @media (max-width:360px){.hero-direction{font-size:27px}.door-hero.has-door .hero-direction{font-size:42px}.hero-compass{width:min(78vw,264px)}.bearing-label{font-size:9px}}
   @media (prefers-reduced-motion:reduce){.hero-arrow-wrap,.hero-compass-dial{transition:none}.door-hero.arrived .hero-compass{animation:none}}
@@ -306,6 +379,10 @@
         <h1>내리는 문<span class="dot">.</span></h1>
       </div>
       <span class="line-badge" id="lineBadge">인천 1</span>
+      <div class="theme-switch" role="group" aria-label="화면 디자인 선택">
+        <button type="button" id="themeA" onclick="setTheme('a')">역명판</button>
+        <button type="button" id="themeC" onclick="setTheme('c')">노선도</button>
+      </div>
     </div>
     <p class="desc">사람이 많아도 화살표만 따라가면, 열리는 문을 찾을 수 있어요.</p>
   </header>
@@ -338,8 +415,23 @@
       <span class="hero-state" id="heroState">시작 전</span>
       <span id="heroSource">대기 중</span>
     </div>
+    <div class="station-sign" aria-hidden="true">
+      <div class="sign-label" id="signLabel">노선</div>
+      <div class="sign-name" id="signName">–</div>
+      <div class="sign-nb"><span id="signPrev"></span><span id="signNext"></span></div>
+    </div>
     <div class="hero-direction" id="heroDirection">어느 쪽 문?</div>
     <div class="hero-station" id="heroStation">노선을 고르고 시작을 눌러주세요</div>
+    <div class="route-plan" aria-hidden="true">
+      <div class="mini-route"><div class="mr-st" id="mrNext"></div><div class="mr-st cur" id="mrCur"></div><div class="mr-st" id="mrPrev"></div></div>
+      <div class="train-plan">진행 ↑
+        <div class="tp-box" id="tpBox">
+          <i class="l" style="top:12px"></i><i class="l" style="top:51px"></i><i class="l" style="top:90px"></i>
+          <i class="r" style="top:12px"></i><i class="r" style="top:51px"></i><i class="r" style="top:90px"></i>
+        </div>
+        <b id="tpLabel"></b>
+      </div>
+    </div>
     <div class="hero-compass" id="heroCompass" aria-label="추정 하차문 방향 화살표">
       <div class="north-index" aria-hidden="true"></div>
       <div class="hero-compass-dial" id="heroCompassDial" aria-hidden="true">
@@ -810,6 +902,7 @@ function inferDirFromDestination(){
 }
 function setDestination(name){
   destName=name||""; destDone=false; approachingKey="";
+  $("destSelect").value=destName;
   try{ localStorage.setItem("dest:"+activeLineId,destName); }catch(_){}
   inferDirFromDestination();
   computeDoor();
@@ -1004,12 +1097,13 @@ function selectLine(id){
   try { localStorage.setItem("selectedLine",id); } catch (_) {}
   $("lineBadge").textContent=line.badge;
   $("lineBadge").style.background=line.color;
+  document.body.style.setProperty("--line",line.color);
   $("lineSupport").textContent=Object.keys(line.doors||{}).length?(line.apiSupported?"문 방향 지원":"베타 지원"):(line.apiSupported?"실시간 API만":"검증 준비 중");
   $("lineSupport").classList.toggle("pending",!line.supported);
   ["autoTrackBtn","dirDown","dirUp"].forEach(controlId=>$(controlId).disabled=!line.supported);
   $("advancedTests").querySelectorAll("button").forEach(btn=>btn.disabled=!line.supported);
   if ($("m3_signalBtn")) $("m3_signalBtn").disabled=true;
-  if (!line.supported){ renderUnsupportedLine(); return; }
+  if (!line.supported){ renderUnsupportedLine(); renderReportBar(); renderThemeExtras(); return; }
   updateDirectionButtons();
   $("dirDown").classList.add("active"); $("dirUp").classList.remove("active");
   setSource("","대기 중");
@@ -1033,6 +1127,39 @@ function setDir(d, manual){
 function computeDoor(){
   computeDoorView();
   renderReportBar();
+  renderThemeExtras();
+}
+/* 역명판(A)·노선도(C)에 쓰는 기준 역과 이전·다음 역, 열차 평면도의 열리는 쪽 */
+function renderThemeExtras(){
+  const waiting=$("doorHero").classList.contains("dest-wait");
+  const moving=state==="MOVING"||state==="ESTIMATING";
+  const dest=activeDest();
+  let ref=-1, label=activeLine().name;
+  if (waiting){ ref=dest; label="내릴 역"; }
+  else if (state!=="IDLE"||lastFix){ ref=moving?nextIdx:curIdx; label=ref===dest?"내릴 역":(moving?"다음 역":"이번 역"); }
+  const near=d=>{ const i=neighborIdx(ref,d); return ref>=0&&i!==ref?STATIONS[i].name:""; };
+  const back=dir==="down"?"up":"down";
+  const prev=near(back), next=near(dir);
+  $("signLabel").textContent=label;
+  const signName=ref>=0?STATIONS[ref].name:(destName||"시작 전");
+  $("signName").textContent=signName;
+  // 긴 역 이름(예: 동대문역사문화공원)도 역명판 한 줄에 들어가게 줄입니다.
+  $("signName").style.fontSize=signName.length>6?"min("+Math.floor(300/signName.length)+"px,"+(84/signName.length).toFixed(1)+"vw)":"";
+  document.querySelector(".route-plan").classList.toggle("empty",ref<0);
+  $("signPrev").textContent=prev?"← "+prev:"";
+  $("signNext").textContent=next?next+" →":"";
+  $("mrPrev").textContent=prev; $("mrNext").textContent=next;
+  $("mrCur").textContent=ref>=0?STATIONS[ref].name:"";
+  $("tpBox").className="tp-box "+(currentDoorSide||"");
+  $("tpLabel").textContent=currentDoorSide?sideWordOf(currentDoorSide)+" 열림":"확인 중";
+}
+function setTheme(t){
+  if (t!=="a"&&t!=="c") t="a";
+  document.body.classList.remove("theme-a","theme-c");
+  document.body.classList.add("themed","theme-"+t);
+  $("themeA").classList.toggle("on",t==="a");
+  $("themeC").classList.toggle("on",t==="c");
+  try{ localStorage.setItem("theme",t); }catch(_){}
 }
 function computeDoorView(){
   if (!activeLine().supported){ renderUnsupportedLine(); return; }
@@ -1891,8 +2018,9 @@ function updateArrow(heading){
 (function(){
   // 주소에 ?debug 를 붙이면 측위 방식 테스트·시뮬레이션 화면을 보여줍니다.
   if (new URLSearchParams(location.search).has("debug")) document.body.classList.add("debug");
-  let saved=null;
-  try { saved=localStorage.getItem("selectedLine"); } catch (_) {}
+  let saved=null, theme=null;
+  try { saved=localStorage.getItem("selectedLine"); theme=localStorage.getItem("theme"); } catch (_) {}
+  setTheme(theme);
   selectLine(saved && LINE_CATALOG[saved] ? saved : "L2");
   saveReports();
 })();
