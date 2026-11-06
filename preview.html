@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>휴대폰 미리보기</title>
+<style>
+  :root{
+    --bg:#eef2f8;--panel:#fff;--edge:#d6dfeb;--text:#172033;--dim:#647086;--blue:#276ef1;--green:#119c62;--red:#d9485f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);min-height:100vh;
+    font-family:'Apple SD Gothic Neo','Pretendard','Noto Sans KR','Malgun Gothic',sans-serif;}
+  .layout{display:flex;gap:28px;align-items:flex-start;justify-content:center;padding:24px 16px;flex-wrap:wrap;}
+
+  /* 휴대폰 틀 */
+  .stage{display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .phone-holder{position:relative;}
+  .phone{position:relative;background:#111722;border-radius:54px;padding:14px;
+    box-shadow:0 0 0 2px #2c3546,0 30px 70px rgba(23,32,51,.28);transform-origin:top left;}
+  .screen{position:relative;overflow:hidden;border-radius:42px;background:#fff;}
+  .screen iframe{display:block;border:0;width:100%;height:100%;background:#fff;}
+  .notch{position:absolute;left:50%;top:24px;transform:translateX(-50%);width:110px;height:30px;border-radius:20px;
+    background:#111722;z-index:2;pointer-events:none;}
+  .phone.android .notch{width:14px;height:14px;top:26px;}
+  .size-note{font-size:12px;color:var(--dim);}
+
+  /* 조작 패널 */
+  .panel{width:340px;max-width:100%;display:flex;flex-direction:column;gap:14px;}
+  .card{background:var(--panel);border:1px solid var(--edge);border-radius:16px;padding:16px;}
+  h1{font-size:20px;font-weight:900;margin-bottom:4px;}
+  h2{font-size:14px;font-weight:900;margin-bottom:10px;}
+  p{font-size:12px;color:var(--dim);line-height:1.6;}
+  label{display:block;font-size:12px;font-weight:800;color:var(--dim);margin:12px 0 6px;}
+  label:first-of-type{margin-top:0;}
+  select,button{font:inherit;}
+  select{width:100%;padding:9px 10px;border:1px solid var(--edge);border-radius:10px;background:#f7f9fc;font-weight:700;}
+  input[type=range]{width:100%;accent-color:var(--blue);}
+  .row{display:flex;gap:8px;flex-wrap:wrap;}
+  .btn{flex:1;min-width:120px;padding:10px 12px;border-radius:10px;border:1px solid var(--edge);background:#fff;
+    font-weight:800;font-size:13px;color:var(--text);cursor:pointer;}
+  .btn.on{border-color:var(--blue);background:#edf3ff;color:var(--blue);}
+  .btn.warn.on{border-color:var(--red);background:#fff1f3;color:var(--red);}
+  .value{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:2px;}
+  .value b{color:var(--text);}
+  .status{font-size:12px;line-height:1.6;padding:10px 12px;border-radius:10px;background:#f4f7fb;color:#3e526d;}
+  .status.ok{background:#eefaf4;color:var(--green);}
+  ol{font-size:12px;color:var(--dim);line-height:1.7;padding-left:18px;}
+  ol b{color:var(--text);}
+  @media (max-width:760px){.panel{width:100%;}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="stage">
+    <div class="phone-holder" id="holder">
+      <div class="phone" id="phone">
+        <div class="notch"></div>
+        <div class="screen" id="screen">
+          <iframe id="app" src="index.html?debug" title="내리는 문 앱 미리보기"></iframe>
+        </div>
+      </div>
+    </div>
+    <div class="size-note" id="sizeNote"></div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h1>휴대폰 미리보기</h1>
+      <p>앱을 실제 휴대폰 크기로 띄우고, PC에 없는 나침반 센서 값을 아래에서 넣어 볼 수 있습니다.</p>
+    </div>
+
+    <div class="card">
+      <h2>기기</h2>
+      <label for="device">화면 크기</label>
+      <select id="device">
+        <option value="390x844:ios">iPhone (390 × 844)</option>
+        <option value="430x932:ios">iPhone Pro Max (430 × 932)</option>
+        <option value="375x667:ios">iPhone SE (375 × 667)</option>
+        <option value="360x780:android" selected>Galaxy S (360 × 780)</option>
+        <option value="412x915:android">Galaxy Ultra (412 × 915)</option>
+      </select>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" type="button" id="reloadBtn">앱 새로고침</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>나침반 센서 흉내</h2>
+      <div class="row">
+        <button class="btn" type="button" id="sensorBtn">센서 신호 보내기</button>
+        <button class="btn" type="button" id="spinBtn">자동 회전</button>
+      </div>
+      <label for="heading">휴대폰이 향하는 방위</label>
+      <input type="range" id="heading" min="0" max="359" value="0">
+      <div class="value"><span>0° = 북쪽, 90° = 동쪽</span><b id="headingVal">0°</b></div>
+
+      <label for="tilt">앞뒤 기울기</label>
+      <input type="range" id="tilt" min="-90" max="90" value="0">
+      <div class="value"><span>0~90° 세워 들어도 화살표가 보여야 정상, 뒤로 -45° 근처면 숨김</span><b id="tiltVal">0°</b></div>
+
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" type="button" id="wrapBtn">359° ↔ 0° 왕복 테스트</button>
+      </div>
+      <div class="status" id="sensorStatus" style="margin-top:12px;">센서 신호를 보내지 않는 중</div>
+    </div>
+
+    <div class="card">
+      <h2>화살표 확인 순서</h2>
+      <ol>
+        <li>앱에서 노선을 <b>인천 1호선</b>으로 둡니다 (문 방향 표가 있는 노선).</li>
+        <li>앱의 <b>고급 테스트 → Ver 3 → 시뮬레이션 체험</b>을 누릅니다.</li>
+        <li>앱 위쪽 <b>시작</b> 대신, <b>공간 방향 화살표 보기 (테스트) → 나침반 켜기</b>를 누릅니다.</li>
+        <li>여기서 <b>센서 신호 보내기</b>를 켜고 방위 슬라이더를 움직입니다.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const frame=$("app");
+let sending=false, spinning=false, wrapTest=null, heading=0, tilt=0, timer=null, lastFrame=0;
+
+// 기기 크기 적용 + 창 높이에 맞게 축소
+function applyDevice(){
+  const [size,kind]=$("device").value.split(":");
+  const [w,h]=size.split("x").map(Number);
+  const screen=$("screen"), phone=$("phone");
+  screen.style.width=w+"px"; screen.style.height=h+"px";
+  phone.classList.toggle("android",kind==="android");
+  const outerW=w+28, outerH=h+28;
+  const available=window.innerHeight-90;
+  const scale=Math.min(1,available/outerH, (window.innerWidth-32)/outerW);
+  phone.style.transform="scale("+scale+")";
+  $("holder").style.width=outerW*scale+"px";
+  $("holder").style.height=outerH*scale+"px";
+  $("sizeNote").textContent=w+" × "+h+" CSS 픽셀"+(scale<1?" · 화면에 맞게 "+Math.round(scale*100)+"%로 축소":"");
+}
+
+// 앱 안으로 절대 방위 센서 이벤트를 보냅니다. 앱은 360 - alpha 를 방위로 사용합니다.
+function sendOrientation(){
+  const w=frame.contentWindow;
+  if(!w) return;
+  const init={alpha:(360-heading)%360,beta:tilt,gamma:0,absolute:true};
+  let event;
+  try{
+    event=new w.DeviceOrientationEvent("deviceorientationabsolute",init);
+  }catch(_){
+    event=new w.Event("deviceorientationabsolute");
+    Object.keys(init).forEach(key=>Object.defineProperty(event,key,{value:init[key]}));
+  }
+  w.dispatchEvent(event);
+}
+
+function tick(now){
+  const dt=lastFrame?Math.min(100,now-lastFrame):16;
+  lastFrame=now;
+  if(spinning) setHeading(heading+dt*0.06);
+  if(wrapTest){
+    // 350°~10° 구간을 오가며 경계에서 화살표가 한 바퀴 돌지 않는지 확인
+    wrapTest.t+=dt/1000;
+    setHeading(360+Math.sin(wrapTest.t*1.5)*12);
+  }
+  if(sending) sendOrientation();
+  timer=(sending||spinning||wrapTest)?requestAnimationFrame(tick):null;
+  if(!timer) lastFrame=0;
+}
+function ensureLoop(){ if(!timer) timer=requestAnimationFrame(tick); }
+
+function setHeading(value){
+  heading=((value%360)+360)%360;
+  $("heading").value=Math.round(heading)%360;
+  $("headingVal").textContent=Math.round(heading)%360+"°";
+}
+function updateStatus(){
+  const s=$("sensorStatus");
+  s.classList.toggle("ok",sending);
+  s.textContent=sending
+    ? "센서 신호 보내는 중 · 방위 "+Math.round(heading)%360+"°, 기울기 "+tilt+"°"
+    : "센서 신호를 보내지 않는 중 · 1.5초 뒤 앱이 '센서 신호 끊김'으로 바뀌어야 정상";
+}
+
+$("device").addEventListener("change",applyDevice);
+window.addEventListener("resize",applyDevice);
+$("reloadBtn").addEventListener("click",()=>frame.contentWindow.location.reload());
+$("sensorBtn").addEventListener("click",()=>{
+  sending=!sending;
+  $("sensorBtn").classList.toggle("on",sending);
+  $("sensorBtn").textContent=sending?"센서 신호 끊기":"센서 신호 보내기";
+  updateStatus(); ensureLoop();
+});
+$("spinBtn").addEventListener("click",()=>{
+  spinning=!spinning; if(spinning&&wrapTest){ wrapTest=null; $("wrapBtn").classList.remove("on"); }
+  $("spinBtn").classList.toggle("on",spinning); ensureLoop();
+});
+$("wrapBtn").addEventListener("click",()=>{
+  wrapTest=wrapTest?null:{t:0};
+  if(wrapTest&&spinning){ spinning=false; $("spinBtn").classList.remove("on"); }
+  $("wrapBtn").classList.toggle("on",Boolean(wrapTest)); ensureLoop();
+});
+$("heading").addEventListener("input",e=>{ setHeading(+e.target.value); updateStatus(); });
+$("tilt").addEventListener("input",e=>{ tilt=+e.target.value; $("tiltVal").textContent=tilt+"°"; updateStatus(); });
+setInterval(()=>{ if(sending) updateStatus(); },500);
+
+applyDevice();
+updateStatus();
+</script>
+</body>
+</html>
