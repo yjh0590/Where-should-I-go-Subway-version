@@ -100,12 +100,19 @@ export default {
         return json(request, env, {error:"Seoul API returned invalid JSON"}, 502);
       }
 
-      const apiStatus = String(payload?.errorMessage?.status ?? "200");
+      // 서울시 API는 "해당하는 데이터가 없습니다"(INFO-200)를 status 500으로 보냅니다.
+      // 심야처럼 열차가 없는 정상 상황이므로 오류 대신 빈 목록으로 돌려줍니다.
+      const statusCode = String(payload?.code || payload?.errorMessage?.code || "");
+      if (statusCode === "INFO-200") {
+        payload = {errorMessage:{status:200, code:"INFO-200", message:"No arrivals", total:0}, realtimeArrivalList:[]};
+      }
+
+      const apiStatus = String(payload?.errorMessage?.status ?? payload?.status ?? "200");
       if (apiStatus !== "200") {
         return json(request, env, {
           error:"Seoul API rejected the request",
-          code:payload?.errorMessage?.code || null,
-          message:payload?.errorMessage?.message || null
+          code:payload?.errorMessage?.code || payload?.code || null,
+          message:payload?.errorMessage?.message || payload?.message || null
         }, 502);
       }
 
