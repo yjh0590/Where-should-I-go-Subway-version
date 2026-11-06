@@ -61,7 +61,7 @@
   .train-axis{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-dim);font-size:10px;text-align:center;gap:4px;}
   .train-axis b{font-size:28px;color:var(--amber);line-height:1;}
   .auto-track{width:100%;border:0;border-radius:14px;padding:15px 14px;background:var(--green);color:#03120a;
-    font:800 16px/1 inherit;cursor:pointer;box-shadow:0 8px 24px rgba(61,240,124,.18);}
+    font-family:inherit;font-weight:800;font-size:16px;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(61,240,124,.18);}
   .auto-track.stop{background:rgba(255,93,93,.12);color:var(--red);border:1px solid var(--red);box-shadow:none;}
   .hero-help{font-size:11px;color:var(--text-dim);text-align:center;margin-top:9px;line-height:1.5;}
 
@@ -238,7 +238,7 @@
   .hero-actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:14px;}
   .auto-track{background:var(--blue);color:#fff;box-shadow:0 8px 22px rgba(39,110,241,.22);}
   .calibrate-btn{width:100%;border:1px solid #b8c9e3;background:#fff;color:#315078;border-radius:14px;padding:13px 12px;
-    font:800 14px/1.35 inherit;text-align:center;}
+    font-family:inherit;font-weight:800;font-size:14px;line-height:1.35;text-align:center;}
   .calibrate-btn.ready{border-color:var(--green);color:var(--green);background:#f2fbf7;}
   .hero-help{font-size:12px;color:#69758a;}
   details.fold>summary,.card{background:#fff;color:var(--text);}
@@ -268,7 +268,7 @@
     border-radius:14px;padding:9px 10px;margin-bottom:12px;box-shadow:0 8px 22px rgba(38,76,135,.07);}
   .line-selector label{font-size:11px;font-weight:900;color:var(--text-dim);}
   .line-selector select{min-width:0;width:100%;border:0;background:#f4f7fb;color:var(--text);border-radius:9px;padding:9px 10px;
-    font:800 14px/1 inherit;outline:none;}
+    font-family:inherit;font-weight:800;font-size:14px;line-height:1;outline:none;}
   .line-support{font-size:10px;font-weight:900;color:var(--green);white-space:nowrap;}
   .line-support.pending{color:var(--amber);}
   .line-badge{border:0;cursor:default;padding:0 10px;}
@@ -298,7 +298,7 @@
   /* ═══ 디자인 A(역명판)·C(노선도) 공통: 그라데이션·그림자·둥근 모서리를 걷어냅니다 ═══ */
   .station-sign,.route-plan{display:none;}
   .theme-switch{display:flex;border:1px solid var(--panel-edge);flex-shrink:0;}
-  .theme-switch button{border:0;background:transparent;padding:8px 10px;font:700 12px/1 inherit;color:var(--text-dim);cursor:pointer;}
+  .theme-switch button{border:0;background:transparent;padding:8px 10px;font-family:inherit;font-weight:700;font-size:12px;line-height:1;color:var(--text-dim);cursor:pointer;}
   .theme-switch button.on{background:var(--text);color:var(--panel);}
   body.themed{--bg:#f4f4f1;--panel:#fff;--panel-edge:#dcdcd6;--text:#111;--text-dim:#6e6e69;--door:#e4002b;--navy:#1b2a4a;--radius:0px;
     background:var(--bg);color:var(--text);}
@@ -335,6 +335,33 @@
   .themed details.fold>summary{color:var(--text);}
   .themed .report-done{color:var(--text);}
   .themed .dir-btn.active{border-color:var(--text);background:var(--panel);}
+  /* 글자 크기·굵기·줄간격 정리: 본문 15·보조 13·라벨 12, 굵기는 400/500/700만 */
+  button,select,input,textarea{font-family:inherit;}
+  body.themed{line-height:1.5;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;}
+  .themed h1{font-weight:700;letter-spacing:-.03em;}
+  .themed .line-selector{padding:10px 12px;gap:10px;}
+  .themed .line-selector label{font-size:12px;font-weight:500;color:var(--text-dim);white-space:nowrap;}
+  .themed .line-selector select{font-size:16px;font-weight:500;line-height:1.3;padding:10px 12px;letter-spacing:-.01em;}
+  .themed .line-support{font-size:12px;font-weight:500;}
+  .themed .theme-switch button{font-size:13px;font-weight:500;padding:9px 12px;}
+  .themed .theme-switch button.on{font-weight:700;}
+  .themed .hero-meta>span{font-size:12px;font-weight:500;padding:6px 10px;line-height:1.2;}
+  .themed .hero-meta .hero-message,.themed .hero-state{font-weight:700;}
+  .themed .hero-direction{line-height:1.15;}
+  .themed .hero-station{font-size:14px;line-height:1.45;}
+  .themed .hero-side-text,.themed .door-hero.estimated .hero-side-text{font-size:16px;font-weight:700;line-height:1.45;}
+  .themed .auto-track{font-size:17px;padding:16px 14px;}
+  .themed .calibrate-btn,.themed .calibrate-btn.ready{font-size:13px;font-weight:500;line-height:1.4;padding:11px 12px;margin-top:8px;}
+  .themed .hero-help{font-size:13px;line-height:1.6;color:var(--text-dim);margin-top:10px;}
+  .themed .report-bar{margin-top:18px;padding-top:16px;}
+  .themed .report-q{font-size:14px;font-weight:700;margin-bottom:10px;}
+  .themed .report-row button{font-size:16px;font-weight:500;padding:13px 8px;}
+  .themed details.fold{margin-bottom:8px;}
+  .themed details.fold>summary{font-size:15px;font-weight:500;padding:15px 16px;}
+  .themed details.fold>summary::after{font-size:16px;font-weight:400;}
+  .themed footer{font-size:12px;line-height:1.7;padding:10px 4px 0;}
+  .theme-c .hero-side-text,.theme-c .hero-help,.theme-c .report-q{text-align:left;text-wrap:pretty;}
+  body.themed .door-hero.dest-wait .hero-side-text{font-weight:400;}
   /* A · 역명판: 노선색 띠, 역 이름, 이전·다음 역, 남색 문 표지 */
   body.theme-a{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
   .theme-a .station-sign{display:block;margin-top:14px;border:1px solid var(--panel-edge);text-align:center;background:#fff;}
@@ -584,7 +611,7 @@
   </details>
 
   <details class="fold" id="reportFold">
-    <summary>현장 기록 (<span id="reportCount">0</span>건)</summary>
+    <summary><span>현장 기록 (<span id="reportCount">0</span>건)</span></summary>
     <div class="fold-body">
       <div class="card">
         <span class="label">역에서 "실제로 열린 문"을 누르면 여기에 쌓여요. 이 휴대폰에서는 기록한 문이 먼저 안내되고, 복사해서 보내 주면 모든 사용자용 데이터에 반영할 수 있어요.</span>
