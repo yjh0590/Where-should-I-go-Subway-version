@@ -1,11 +1,12 @@
 // 내리는 문 — 4단계 API 연결용 오프라인 캐시
 // 화면·데이터 파일을 바꿔 배포할 때마다 버전을 올려야 사용자 기기의 오래된 캐시가 교체됩니다.
-const CACHE = "naerineun-mun-step4-v5";
+const CACHE = "naerineun-mun-step4-v6";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./config.js",
   "./data/stations-seoul.js",
+  "./data/platform-types-seoul.js",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
