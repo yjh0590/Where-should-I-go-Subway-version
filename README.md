@@ -7,7 +7,8 @@
 - `index.html`: 기존 화면과 위치·방향 계산, 실제 API 응답 처리
 - `data/stations-seoul.js`: 서울 1~9호선 역 좌표 및 분기·순환 경로
 - `data/seoul-station-master.csv`: 좌표 데이터의 원본 정리본
-- `sw.js`: 화면과 역 좌표를 오프라인에 저장하되 실시간 API 응답은 캐시하지 않음
+- `sw.js`: 화면과 역 좌표를 오프라인에 저장하되 실시간 API 응답은 캐시하지 않음. **파일을 바꿔 배포할 때마다 `CACHE` 버전을 올려야** 사용자 기기의 오래된 화면이 교체됩니다.
+- `manifest.json`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`: 홈 화면 추가(PWA 설치)용 정보와 아이콘
 - `config.js`: 브라우저에 공개해도 되는 Cloudflare Worker 주소만 저장
 - `cloudflare-worker/`: 서울시 API 인증키를 Secret으로 숨기는 중계 서버
 

@@ -1,9 +1,15 @@
 // 내리는 문 — 4단계 API 연결용 오프라인 캐시
-const CACHE = "naerineun-mun-step4-v3";
+// 화면·데이터 파일을 바꿔 배포할 때마다 버전을 올려야 사용자 기기의 오래된 캐시가 교체됩니다.
+const CACHE = "naerineun-mun-step4-v4";
 const APP_ASSETS = [
   "./",
   "./index.html",
-  "./data/stations-seoul.js"
+  "./config.js",
+  "./data/stations-seoul.js",
+  "./manifest.json",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./apple-touch-icon.png"
 ];
 
 self.addEventListener("install", event => {
@@ -24,15 +30,23 @@ self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
 
-  // Worker 주소 설정은 배포 후 바뀔 수 있으므로 항상 네트워크에서 확인합니다.
-  if (url.origin === self.location.origin && url.pathname.endsWith("/config.js")) {
-    event.respondWith(fetch(event.request, {cache:"no-store"}));
-    return;
-  }
-
   // 실시간 도착정보는 오래된 캐시를 사용하면 안 됩니다.
   if (url.pathname.includes("/api/subway/")) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Worker 주소 설정은 배포 후 바뀔 수 있으므로 네트워크를 먼저 확인하고, 오프라인이면 마지막 값을 씁니다.
+  if (url.origin === self.location.origin && url.pathname.endsWith("/config.js")) {
+    event.respondWith(
+      fetch(event.request, {cache:"no-store"}).then(response => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put("./config.js", copy));
+        }
+        return response;
+      }).catch(() => caches.match("./config.js"))
+    );
     return;
   }
 
@@ -44,7 +58,7 @@ self.addEventListener("fetch", event => {
           caches.open(CACHE).then(cache => cache.put(event.request, copy));
         }
         return response;
-      }).catch(() => caches.match("./index.html"))
+      }).catch(() => event.request.mode === "navigate" ? caches.match("./index.html") : Response.error())
     )
   );
 });

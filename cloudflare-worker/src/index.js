@@ -119,7 +119,9 @@ export default {
         headers:{...corsHeaders(request, env), "Content-Type":"application/json; charset=utf-8", "Cache-Control":"no-store", "X-Proxy-Cache":"MISS"}
       });
     } catch (error) {
-      return json(request, env, {error:"Upstream connection failed", message:error.message}, 502);
+      // 오류 메시지에 인증키가 포함된 요청 주소가 섞일 수 있으므로 원문을 응답에 넣지 않습니다.
+      console.error("Upstream connection failed", error?.name || "Error");
+      return json(request, env, {error:"Upstream connection failed"}, 502);
     }
   }
 };

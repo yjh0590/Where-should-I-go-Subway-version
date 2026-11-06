@@ -386,7 +386,7 @@
         <button class="go-btn" id="m2_pollBtn" onclick="m2_togglePoll()">▶ 실제 API 폴링 시작</button>
         <button class="alt-btn" onclick="m2_clearLog()">로그 지우기</button>
       </div>
-      <div class="mode-status" id="m2_status">중계 서버 연결 전 · 5초 간격으로 조회합니다</div>
+      <div class="mode-status" id="m2_status">중계 서버 연결 전 · 15초 간격으로 조회합니다</div>
       <div class="api-log" id="m2_log">API 응답 로그가 여기에 표시돼요</div>
       <div class="route-strip" id="routeStrip2"></div>
     </div>
@@ -461,15 +461,18 @@
     <summary>데이터 출처와 검증 상태</summary>
     <div class="fold-body">
       <div class="card data-note">
-        <strong>수도권 전체 노선 구조 · 문 방향 데이터 단계적 검증</strong><br>
-        수도권 24개 노선을 선택할 수 있습니다. 현재 실제 위치 추적과 문 방향 안내가 활성화된 노선은 인천 1호선 베타 데이터뿐이며, 다른 노선은 국가철도공단 역사·노선 데이터와 방면별 문 방향 검증 후 순차 활성화합니다. 검증되지 않은 노선에는 방향을 표시하지 않습니다.<br><br>
-        <a href="https://data.kric.go.kr/" target="_blank" rel="noopener">국가철도공단 철도데이터포털 보기</a>
+        <strong>노선별 지원 범위</strong><br>
+        · <strong>서울 1~9호선</strong>: 서울시 역사마스터 좌표로 위치를 추적하고, 문 방향은 서울시 실시간 도착정보 API가 값을 줄 때만 표시합니다. 1호선은 서울교통공사 구간(서울역~청량리)만 포함합니다.<br>
+        · <strong>인천 1호선</strong>: 역·방면별 문 방향 베타 표를 사용합니다. 현장 검증 전입니다.<br>
+        · <strong>그 외 노선</strong>: 데이터 검증 전이라 방향을 표시하지 않습니다.<br><br>
+        <a href="https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do" target="_blank" rel="noopener">서울시 역사마스터 정보</a> ·
+        <a href="https://data.kric.go.kr/" target="_blank" rel="noopener">국가철도공단 철도데이터포털</a>
       </div>
     </div>
   </details>
 
   <footer>
-    ※ 수도권 노선 선택 구조를 지원하며, 현재 문 방향 안내가 활성화된 노선은 인천 1호선 베타 데이터입니다. 검증되지 않은 노선은 방향을 추측하지 않습니다.
+    ※ 서울 1~9호선은 실시간 API가 문 방향을 줄 때만, 인천 1호선은 베타 데이터로 안내합니다. 검증되지 않은 방향은 추측하지 않으며, 화살표는 추정값이므로 실제 문을 꼭 확인하세요.
   </footer>
 </div>
 
@@ -599,10 +602,14 @@ const stationLabel=name=>String(name||"").endsWith("역")?String(name):String(na
 function findStationIndexByName(name){
   const wanted=plainStationName(name);
   if (!wanted) return -1;
-  return STATIONS.findIndex(station=>{
-    const candidate=plainStationName(station.name);
-    return candidate===wanted || candidate.includes(wanted) || wanted.includes(candidate);
-  });
+  // 정확히 같은 이름을 먼저 찾습니다. 부분 일치를 먼저 허용하면 잠실→잠실나루, 석촌→석촌고분처럼 다른 역에 연결됩니다.
+  const exact=STATIONS.findIndex(station=>plainStationName(station.name)===wanted);
+  if (exact>=0) return exact;
+  const partial=STATIONS
+    .map((station,idx)=>({idx,candidate:plainStationName(station.name)}))
+    .filter(({candidate})=>candidate.includes(wanted)||wanted.includes(candidate));
+  // 부분 일치 후보가 하나뿐일 때만 사용하고, 여러 개면 잘못 연결하지 않도록 포기합니다.
+  return partial.length===1?partial[0].idx:-1;
 }
 function directionText(){
   if (activeRoute?.circular) return dir==="down"?"내선":"외선";
@@ -753,6 +760,7 @@ function selectLine(id){
   LIVE_DOOR_DIRECTIONS={};
   if (typeof resetApiTracking==="function") resetApiTracking();
   $("lineSelect").value=id;
+  try { localStorage.setItem("selectedLine",id); } catch (_) {}
   $("lineBadge").textContent=line.badge;
   $("lineBadge").style.background=line.color;
   $("lineSupport").textContent=line.apiSupported?"API·좌표 지원":(line.supported?"베타 지원":"검증 준비 중");
@@ -1242,12 +1250,13 @@ function m3_enterEstimating(){
       bannerAtStation(nextIdx,"⏱ 추정 도착 (신호 복구 시 실측 보정됨)");
       $("m3_eta").textContent="";
       setSource("est","🛰️ 추정값 (미확정)");
-      // 다음 구간도 계속 추정: 정차 25초 후 재출발 가정
+      // 다음 구간도 계속 추정: 실제 추적은 정차 25초, 시뮬레이션은 5초 후 재출발로 가정
+      const dwellMs=m3_simTimer?5000:25000;
       setTimeout(()=>{
         if (state==="AT_STATION" && m3_estTimer===null && (m3_signalLost || Date.now()-m3_lastFixTime>SIGNAL_TIMEOUT)){
           if ((m3_simTimer||m3_watchId!==null)){ bannerMoving("추정 재출발 (신호 없음)"); m3_enterEstimating(); }
         }
-      },25000*0.2); // 데모라 5초로 단축
+      },dwellMs);
     }
   },1000);
 }
@@ -1556,7 +1565,11 @@ function updateArrow(heading){
   setCompassText("manualVal",Math.round(heading)+"°");
 }
 
-selectLine("ICN1");
+(function(){
+  let saved=null;
+  try { saved=localStorage.getItem("selectedLine"); } catch (_) {}
+  selectLine(saved && LINE_CATALOG[saved] ? saved : "ICN1");
+})();
 </script>
 
 <div id="installTip" style="display:none;position:fixed;left:16px;right:16px;bottom:16px;z-index:100;
