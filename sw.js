@@ -1,6 +1,6 @@
 // 내리는 문 — 4단계 API 연결용 오프라인 캐시
 // 화면·데이터 파일을 바꿔 배포할 때마다 버전을 올려야 사용자 기기의 오래된 캐시가 교체됩니다.
-const CACHE = "naerineun-mun-step4-v9";
+const CACHE = "naerineun-mun-step4-v12";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -30,6 +30,8 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+  // PC 미리보기(로컬 서버)에서는 고친 파일이 바로 보이도록 캐시를 거치지 않습니다.
+  if (["localhost", "127.0.0.1"].includes(self.location.hostname)) return;
   const url = new URL(event.request.url);
 
   // 실시간 도착정보는 오래된 캐시를 사용하면 안 됩니다.

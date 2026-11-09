@@ -189,6 +189,7 @@
   .manual-row input[type=range]{width:100%;accent-color:var(--amber);}
   .manual-label{font-size:12px;color:var(--text-dim);display:flex;justify-content:space-between;margin-top:4px;}
   footer{font-size:12px;color:var(--text-dim);line-height:1.6;padding:4px 6px;}
+  footer a{color:var(--blue);}
 
   /* 밝은 안내판 테마 · 나침반을 첫 화면의 중심으로 */
   :root{
@@ -250,8 +251,6 @@
   .api-log{background:#f4f7fb;color:#3e526d;border-color:#dce4ef;}
   .go-btn{background:#f0faf5}.alt-btn{background:#fff}.dir-btn{background:#fff}.dir-btn.active{color:var(--text);background:#fff7e8;}
   .rs-dot{background:#dbe3ee;border-color:#bac7d9}.rs-line{background:#dbe3ee;}
-  .data-note{font-size:12px;line-height:1.65;color:var(--text-dim);}
-  .data-note strong{color:var(--text);}.data-note a{color:var(--blue);}
   .brand-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
   .line-badge{display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:30px;border-radius:999px;
     background:var(--blue);color:#fff;font-size:12px;font-weight:900;box-shadow:0 5px 14px rgba(39,110,241,.22);}
@@ -489,7 +488,7 @@
     <div id="leftDoorMark" hidden></div><div id="rightDoorMark" hidden></div>
   </section>
 
-  <details class="fold">
+  <details class="fold debug-only">
     <summary>현재 구간 자세히</summary>
     <div class="fold-body">
 
@@ -626,24 +625,9 @@
     </div>
   </details>
 
-  <details class="fold">
-    <summary>데이터 출처와 검증 상태</summary>
-    <div class="fold-body">
-      <div class="card data-note">
-        <strong>노선별 지원 범위</strong><br>
-        · <strong>서울 1~8호선</strong>: 서울시 역사마스터 좌표로 위치를 추적합니다. 문 방향은 실시간 도착정보 API 값을 우선 쓰고, 없으면 서울교통공사 역사심도정보의 승강장 형식(섬식·상대식)과 통행 방향으로 추정합니다. 섬식(복합)·단선 역과 7호선 까치울~석남은 비워 둡니다. 1호선은 서울교통공사 구간(서울역~청량리)만 포함합니다.<br>
-        · <strong>서울 9호선</strong>: 문 방향은 실시간 API가 값을 줄 때만 표시합니다.<br>
-        · <strong>인천 1호선</strong>: 역·방면별 문 방향 베타 표를 사용합니다. 현장 검증 전입니다.<br>
-        · <strong>그 외 노선</strong>: 데이터 검증 전이라 방향을 표시하지 않습니다.<br><br>
-        <a href="https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do" target="_blank" rel="noopener">서울시 역사마스터 정보</a> ·
-        <a href="https://data.seoul.go.kr/dataList/OA-13305/S/1/datasetView.do" target="_blank" rel="noopener">서울교통공사 역사심도정보</a> (공공누리 제1유형) ·
-        <a href="https://data.kric.go.kr/" target="_blank" rel="noopener">국가철도공단 철도데이터포털</a>
-      </div>
-    </div>
-  </details>
-
   <footer>
-    ※ 서울 1~8호선은 실시간 API 또는 승강장 구조로, 9호선은 실시간 API가 문 방향을 줄 때만, 인천 1호선은 베타 데이터로 안내합니다. 검증되지 않은 방향은 추측하지 않으며, 화살표는 추정값이므로 실제 문을 꼭 확인하세요.
+    ※ 문 방향은 대부분 승강장 구조로 추정한 값이에요. 화살표도 추정이니 실제 문을 꼭 확인하세요.<br>
+    출처: <a href="https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do" target="_blank" rel="noopener">서울시 역사마스터 정보</a> · <a href="https://data.seoul.go.kr/dataList/OA-13305/S/1/datasetView.do" target="_blank" rel="noopener">서울교통공사 역사심도정보</a> (공공누리 제1유형) · <a href="https://data.kric.go.kr/" target="_blank" rel="noopener">국가철도공단 철도데이터포털</a>
   </footer>
 </div>
 
@@ -762,7 +746,6 @@ let activeLineId="ICN1";
 let STATIONS=INCHEON_LINE_1_STATIONS;
 let DOOR_DIRECTIONS=INCHEON_LINE_1_DOORS;
 let activeRoute=null;
-let LIVE_DOOR_DIRECTIONS={};
 const activeLine=()=>LINE_CATALOG[activeLineId];
 const $ = id => document.getElementById(id);
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
@@ -789,7 +772,12 @@ function neighborIdx(idx,d){
   return clampIdx(idx+step);
 }
 const plainStationName=name=>String(name||"")
-  .replace(/\([^)]*\)/g,"").replace(/역$/g,"").replace(/[·.\s]/g,"").trim();
+  .replace(/\([^)]*\)/g,"").replace(/역$/g,"").replace(/[·.\s]/g,"").replace(/순환$/,"").trim();
+// 실시간 API는 아래 역만 괄호까지 붙인 이름으로 찾습니다(괄호를 빼면 0건). 2026-11-09 Worker로 54개 괄호 역 전수 확인.
+const API_FULL_NAME_STATIONS=new Set(["신정(은행정)","오목교(목동운동장앞)","군자(능동)","아차산(어린이대공원후문)","광나루(장신대)","천호(풍납토성)","굽은다리(강동구민회관앞)","새절(신사)","증산(명지대앞)","월드컵경기장(성산)","대흥(서강대앞)","안암(고대병원앞)","월곡(동덕여대)","올림픽공원(한국체대)","상월곡(한국과학기술연구원)","화랑대(서울여대입구)","어린이대공원(세종대)","숭실대입구(살피재)","몽촌토성(평화의문)","총신대입구(이수)"]);
+const API_NAME_ALIASES={"공릉(서울과학기술대)":"공릉(서울산업대입구)","남한산성입구(성남법원.검찰청)":"남한산성입구(성남법원,검찰청)","응암":"응암순환(상선)","이수":"총신대입구(이수)","상도":"상도(중앙대앞)"};
+// 올림픽공원은 5호선만 괄호 이름, 9호선은 괄호 없는 이름으로 찾습니다.
+const apiStationName=name=>API_NAME_ALIASES[name]||(API_FULL_NAME_STATIONS.has(name)&&!(name==="올림픽공원(한국체대)"&&activeLine().apiSubwayId==="1009")?name:plainStationName(name));
 const stationLabel=name=>String(name||"").endsWith("역")?String(name):String(name||"")+"역";
 function findStationIndexByName(name){
   const wanted=plainStationName(name);
@@ -820,8 +808,6 @@ function doorInfo(name,skipMine=false){
   if(mine) return {side:mine,source:"mine"};
   const confirmed=DOOR_OVERRIDES[activeLineId]?.[key]?.[dir];
   if(confirmed) return {side:confirmed,source:"confirmed"};
-  const live=LIVE_DOOR_DIRECTIONS[key]?.[dir];
-  if(live) return {side:live,source:"api"};
   const entry=DOOR_DIRECTIONS[name];
   if(entry?.[dir]) return {side:entry[dir],source:entry.derived?"derived":"table"};
   return {side:null,source:null};
@@ -829,7 +815,7 @@ function doorInfo(name,skipMine=false){
 
 /* ═══ 현장 기록: 역에서 실제로 열린 문을 남깁니다 ═══ */
 const sideWordOf=s=>s==="left"?"왼쪽":(s==="right"?"오른쪽":"없음");
-const SOURCE_WORD={mine:"내 기록",confirmed:"확인됨",api:"실시간",derived:"추정",table:"베타표"};
+const SOURCE_WORD={mine:"내 기록",confirmed:"확인됨",derived:"추정",table:"베타표"};
 function reportTargetIdx(){ return state==="IDLE"?-1:curIdx; }
 function renderReportBar(){
   const idx=reportTargetIdx();
@@ -999,20 +985,15 @@ let moveTicks=0, stopTicks=0, lastFix=null;
 let stationRadius=600;      // 모드별로 조정 (초기 모드는 Ver 1)
 let autoTracking=false;
 let gpsFixHistory=[], lastTrackMatch=null, lastReliableKmh=0;
-let lastGpsSuccessAt=0, lastApiSuccessAt=0, lastApiMatchAt=0, lastApiDoorAt=0, lastApiDoorKey="";
+let lastGpsSuccessAt=0, lastApiSuccessAt=0, lastApiMatchAt=0;
 let autoCoordinatorTimer=null;
-const GPS_FRESH_MS=8000, API_DOOR_FRESH_MS=15000, MAX_TRACK_OFFSET=250;
+const GPS_FRESH_MS=8000, API_FRESH_MS=15000, MAX_TRACK_OFFSET=250;
 
 function resetFusionState(){
   gpsFixHistory=[]; lastTrackMatch=null; lastReliableKmh=0;
-  lastGpsSuccessAt=0; lastApiSuccessAt=0; lastApiMatchAt=0; lastApiDoorAt=0; lastApiDoorKey="";
+  lastGpsSuccessAt=0; lastApiSuccessAt=0; lastApiMatchAt=0;
 }
 function freshGps(now=Date.now()){ return lastGpsSuccessAt>0 && now-lastGpsSuccessAt<=GPS_FRESH_MS; }
-function freshApiDoor(now=Date.now()){
-  const targetIdx=(state==="MOVING"||state==="ESTIMATING")?nextIdx:curIdx;
-  const targetKey=plainStationName(STATIONS[targetIdx]?.name);
-  return lastApiDoorKey===targetKey && lastApiDoorAt>0 && now-lastApiDoorAt<=API_DOOR_FRESH_MS;
-}
 
 function projectPointToSegment(lat,lng,a,b){
   const meanLat=toRad((a.lat+b.lat+lat)/3);
@@ -1115,7 +1096,6 @@ function selectLine(id){
   DOOR_DIRECTIONS=line.doors||{};
   curIdx=Math.min(10,STATIONS.length-1); nextIdx=neighborIdx(curIdx,"down"); dir="down"; dirLocked=false; lastFix=null; state="IDLE";
   currentDoorSide=null; doorBearing=null;
-  LIVE_DOOR_DIRECTIONS={};
   dirManual=false; destDone=false;
   loadDestination();
   populateDestSelect();
@@ -1518,12 +1498,6 @@ function resetApiTracking(){
   trackedTrainNo=null;
   m2_pollInFlight=false;
 }
-function parseDoorSide(value){
-  const text=String(value||"").trim().toLowerCase();
-  if (text.includes("왼")||text==="left"||text==="l") return "left";
-  if (text.includes("오른")||text==="right"||text==="r") return "right";
-  return null;
-}
 function arrivalRows(payload){
   return payload?.realtimeArrivalList || payload?.data?.realtimeArrivalList || [];
 }
@@ -1540,7 +1514,10 @@ function routeMatchForArrival(row,stationName){
       const apiDir=apiDirection.includes("내선")?"down":(apiDirection.includes("외선")?"up":null);
       if (!apiDir || apiDir===dir) return {route,queryIdx,tripDir:apiDir||dir};
     } else if (viaIdx>=0 || destinationIdx>=0){
-      const directionIdx=viaIdx>=0?viaIdx:destinationIdx;
+      // "중앙보훈병원행 - 종합운동장방면"처럼 방면이 조회한 역 자신이면 방향을 알 수 없어 종착역으로 판단합니다.
+      const useVia=viaIdx>=0&&viaIdx!==queryIdx;
+      if (!useVia&&destinationIdx<0) continue;
+      const directionIdx=useVia?viaIdx:destinationIdx;
       const tripDir=directionIdx>queryIdx?"down":"up";
       if (tripDir===dir) return {route,queryIdx,tripDir};
     }
@@ -1582,14 +1559,6 @@ function applyArrival(row,match,stationName){
   if (stationIdx<0) return;
   lastApiSuccessAt=Date.now();
   lastApiMatchAt=Date.now();
-  const apiDoor=parseDoorSide(row.subwayHeading);
-  if (apiDoor){
-    const key=plainStationName(STATIONS[stationIdx].name);
-    LIVE_DOOR_DIRECTIONS[key] ||= {};
-    LIVE_DOOR_DIRECTIONS[key][dir]=apiDoor;
-    lastApiDoorAt=Date.now();
-    lastApiDoorKey=key;
-  }
   const arrivalCode=String(row.arvlCd??"");
   if (!trackedTrainNo && (arrivalCode==="1"||arrivalCode==="2")) trackedTrainNo=String(row.btrainNo||"")||null;
   const gpsOwnsPosition=autoTracking&&freshGps();
@@ -1624,7 +1593,7 @@ async function m2_pollOnce(){
   m2_pollInFlight=true;
   const station=state==="MOVING"||state==="ESTIMATING" ? STATIONS[nextIdx] : STATIONS[curIdx];
   try{
-    const url=baseUrl+"/api/subway/arrivals?station="+encodeURIComponent(plainStationName(station.name));
+    const url=baseUrl+"/api/subway/arrivals?station="+encodeURIComponent(apiStationName(station.name));
     const response=await fetch(url,{headers:{Accept:"application/json"},cache:"no-store"});
     if (!response.ok) throw new Error("HTTP "+response.status);
     const payload=await response.json();
@@ -1721,13 +1690,10 @@ function m3_exitEstimating(msg){
 function refreshAutoSource(){
   if(!autoTracking) return;
   const now=Date.now();
-  if(freshApiDoor(now)){
-    setSource("api","실시간 열차 정보");
-    if(m3_estTimer) m3_exitEstimating("API 문 방향과 열차 상태로 복구됨");
-  } else if(freshGps(now)){
+  if(freshGps(now)){
     setSource("gps","GPS 위치");
     if(m3_estTimer) m3_exitEstimating("GPS 신호 복구 · 선로 위치로 보정됨");
-  } else if(lastApiMatchAt&&now-lastApiMatchAt<=API_DOOR_FRESH_MS){
+  } else if(lastApiMatchAt&&now-lastApiMatchAt<=API_FRESH_MS){
     setSource("api","실시간 열차 정보");
   } else if(lastFix&&(state==="MOVING"||state==="ESTIMATING")){
     if(!m3_estTimer) m3_enterEstimating();
@@ -1796,7 +1762,7 @@ function startUnifiedAuto(){
   $("m3_realBtn").textContent="⏹ 자동 전환 추적 중";
   $("m3_realBtn").classList.add("stop");
   $("m3_status").textContent=apiStarted
-    ? "API 문 방향 → GPS 선로 계산 → 무신호 추정 순서로 자동 전환"
+    ? "GPS 선로 계산 → 실시간 열차 정보 → 무신호 추정 순서로 자동 전환"
     : "GPS 선로 계산 → 무신호 추정 사용 중 · API는 4단계 서버 연결 후 합류";
   autoCoordinatorTimer=setInterval(refreshAutoSource,1000);
   refreshAutoSource();
